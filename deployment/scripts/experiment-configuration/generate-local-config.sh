@@ -40,15 +40,15 @@ faultyMachineLocations="sjc04 osa23 ams03 syd05 lon06 wdc07 che01 tok05 par01 da
 clients1="1"    # deploys 1 client machine which run the specified number of client instances
 clients16=""    # deploys 16 client machine which run the specified number of client instances
 clients32=""    # deploys 32 client machine which run the specified number of client instances
-systemSizes="4" # Must be sorted in ascending order!
-failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
+systemSizes="3" # Must be sorted in ascending order!
+failureCounts=(1) # For each system size, the corresponding failure count (on top of the correct nodes)
 reuseFaulty=true  # If true, both correct and faulty peers will have the same tag and will be launched together, with the same config file.
                   # The failure count is only expressed as a parameter in (every peer's) config file, and even the faulty peers will see
                   # Faulty=false in their config file. They need to derive their behavior from the Failures config field (and potentially
                   # the RandomSeed field).
 
 # Low-level system parameters
-loggingLevel="info"
+loggingLevel="debug"
 peerTag="peers"
 faultyPeerTag="faultyPeers"
 minConcurrentRequests=$((256 * 16384)) # Based on empirical data. At saturation, makes the throughput-latency plot nicely go up (as it is equivalent to may concurrent clients).
@@ -73,16 +73,16 @@ fixedEpochLength=false
 auths="true"
 bucketsPerLeader="16"
 minBuckets="16"
-minEpochLength="256"       # [entries]
+minEpochLength="64"       # [entries]
 nodeConnections="1"
 minConnections="16"
-leaderPolicies="Simple Single"  # Possible values:
+leaderPolicies="Backoff"  # Possible values:
                          #     "Single": only one node in the leaderset. Simulates the single leader version of the protocols.
                          #     "Simple": all nodes in the leaderset
                          #     "Blacklist": faulty nodes are blacklisted, at least 2f+1 nodes in the leaderset
                          #     "Backoff": faulty nodes are temporarily blacklisted and their penalty exponentially increases if after reinclusion to the leaderset they are faulty again.
 leaderPolicyWithFaults="SimulatedRandomFailures"
-crashTimings="EpochStart" # Possible values:
+crashTimings="EpochEnd" # Possible values:
                           #     "EpochStart": The faulty nodes stop participating at the protocol at the beginning of the first epoch
                           #     "EpochEnd": The faulty nodes stop participating at the protocol before proposing their last batch
                           #     "Straggler": The faulty nodes, if in the leaderset, delay proposing their batches for 0.5*viewChangeTimeouts. Works only with Pbft orderer.
@@ -405,9 +405,9 @@ function generateCombinations() {
                                                 segmentLength=0
                                               fi
 
-                                              if [ $numFailures -gt 0 ]; then
-                                                leaderPolicy="$leaderPolicyWithFaults"
-                                              fi
+                                              # if [ $numFailures -gt 0 ]; then
+                                              #   leaderPolicy="$leaderPolicyWithFaults"
+                                              # fi
 
                                               if [ $leaderPolicy = "Single" ]; then
                                                 segmentLength=$singleLeaderEpoch
