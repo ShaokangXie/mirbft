@@ -75,14 +75,14 @@ orderers="Pbft"             # Possible values: Pbft HotStuff Raft Dummy
 checkpointers="Signing"
 
 # Parameters chosen for experiments
-durations="30"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
+durations="120"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
 bandwidths="1gbit"         # any value accepted by the tc command or "unlimited" !!! ATTENTION: Adapt MaxProposeDataRate in config accordingly !!!
 payloadSizes="500"         # [Bytes]
 fixedEpochLength=false
 auths="true"
 bucketsPerLeader="16"
 minBuckets="16"
-minEpochLength=$(($systemSizes * 16))       # [entries]
+minEpochLength=$(($systemSizes * 32))       # [entries]
 nodeConnections="1"
 minConnections="16"
 leaderPolicies="Simple"  # Possible values:
@@ -91,7 +91,7 @@ leaderPolicies="Simple"  # Possible values:
                          #     "Blacklist": faulty nodes are blacklisted, at least 2f+1 nodes in the leaderset
                          #     "Backoff": faulty nodes are temporarily blacklisted and their penalty exponentially increases if after reinclusion to the leaderset they are faulty again.
 leaderPolicyWithFaults="SimulatedRandomFailures"
-crashTimings="ByzantineStraggler" # Possible values:
+crashTimings="Straggler" # Possible values:
                           #     "EpochStart": The faulty nodes stop participating at the protocol at the beginning of the first epoch
                           #     "EpochEnd": The faulty nodes stop participating at the protocol before proposing their last batch
                           #     "Straggler": The faulty nodes, if in the leaderset, delay proposing their batches for 0.5*viewChangeTimeouts. Works only with Pbft orderer.
@@ -101,10 +101,11 @@ singleLeaderEpoch=$minEpochLength
 
 # Parameters to tune:
 batchsizes="4096"           # [requests]
-batchrates="8"             # [batches/s]
-minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
+batchrates="32"             # [batches/s]
+# minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
+minBatchTimeout="2000"  # [ms]
 maxBatchTimeout="16000"      # [ms]
-segmentLengths="16"         # [entries]
+segmentLengths="32"         # [entries]
 viewChangeTimeouts="60000"  # [ms]
 nodeToLeaderRatios="1"      # How many nodes are initally leaders, set to 1 to have initially all nodes in the leaderset
 
@@ -123,7 +124,7 @@ throughputsAuthPbft=$()
 throughputsAuthPbft[4]="1024 2048 4096"
 #throughputsAuthPbft[4]="128"
 throughputsAuthPbft[8]="5000 10000 15000 20000 25000 30000 35000 40000 45000"
-throughputsAuthPbft[16]="30000 40000 50000"
+throughputsAuthPbft[16]="40000 50000 60000"
 throughputsAuthPbft[32]="35000"
 throughputsAuthPbft[64]="5000 10000 15000 20000 25000 30000 35000 40000 45000"
 throughputsAuthPbft[128]=""
