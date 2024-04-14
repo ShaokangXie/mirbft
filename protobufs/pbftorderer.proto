@@ -16,6 +16,7 @@ message PbftPreprepare {
     bool aborted = 5;
     int64 ts = 6; // Timestamp to be set by the receiver at message reception.
     int32 tn = 7;
+    repeated int32 tnlog = 8;
 }
 
 message PbftPrepare {
