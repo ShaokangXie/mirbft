@@ -17,6 +17,7 @@ package orderer
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -41,8 +42,8 @@ const (
 )
 
 var (
-// Store the htn msg from all instances
-	lock     sync.Mutex
+	// Store the htn msg from all instances
+	lock sync.Mutex
 )
 
 // TODO: Consolidate the segment-internal and the global checkpoints.
@@ -72,7 +73,7 @@ type pbftInstance struct {
 	htnLog          map[int32]int32
 	htnRecv         map[int32]int
 	readyToPropose  map[int32]chan struct{}
-	alreadyCommit	map[int32]chan struct{}
+	alreadyCommit   map[int32]chan struct{}
 	lastProposeSn   int32
 	firstUncommitSn map[int32]int32
 	// Ladon
@@ -199,7 +200,7 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.htnLog = make(map[int32]int32)
 	pi.htnRecv = make(map[int32]int)
 	for i := 0; i < membership.NumNodes(); i++ {
-		pi.htnLog[int32(i)] = -1
+		pi.htnLog[int32(i)] = (int32(pi.segment.FirstSN()) - int32(pi.segment.SegID())) / int32(membership.NumNodes())
 	}
 	pi.readyToPropose = make(map[int32]chan struct{})
 	pi.alreadyCommit = make(map[int32]chan struct{})
@@ -218,7 +219,7 @@ func (pi *pbftInstance) lead() {
 	batchSize := pi.segment.BatchSize()
 
 	// Simulate a straggler.
-	if membership.SimulatedStraggler[int32(pi.segment.SegID())%int32(membership.NumNodes())] == 1 && config.Config.CrashTiming == "Straggler" {
+	if membership.SimulatedStraggler[int32(pi.segment.SegID())%int32(membership.NumNodes())] == 1 && (config.Config.CrashTiming == "Straggler" || config.Config.CrashTiming == "ByzantineStraggler") {
 		//if config.Config.CrashTiming == "Straggler" {
 		config.Config.BatchTimeoutMs = int(0.16666667 * float64(config.Config.ViewChangeTimeoutMs))
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond
@@ -237,7 +238,6 @@ func (pi *pbftInstance) lead() {
 		}
 		// Ladon
 
-
 		// Wait for a batch to be ready.
 		// We must not cut the batch now, as, in case of a view change,
 		// it might get stuck in the instance serializer buffer without being processed.
@@ -253,7 +253,8 @@ func (pi *pbftInstance) lead() {
 		newSeqMsg := &pb.PbftPreprepare{
 			Sn: sn,
 			// Ladon
-			Tn: -1,
+			Tn:    -1,
+			Tnlog: nil,
 			// Ladon
 			// In general, the view must be set by the serial processing thread.
 			// Setting it here results in a race condition and maybe even incorrect in a corner case.
@@ -276,9 +277,11 @@ func (pi *pbftInstance) lead() {
 		// If it is the first sn, propose directly
 		if pi.lastProposeSn != -1 {
 			// If the channel not initialize, initialize it first.
+			lock.Lock()
 			if pi.readyToPropose[pi.lastProposeSn] == nil {
 				pi.readyToPropose[pi.lastProposeSn] = make(chan struct{})
 			}
+			lock.Unlock()
 			<-pi.readyToPropose[pi.lastProposeSn]
 		}
 
@@ -290,7 +293,54 @@ func (pi *pbftInstance) lead() {
 		// 	}
 		//}
 
-		htnToPropose := membership.GetHtn() + 1
+		//htn := membership.GetHtn() + 1
+		//for key, value := range newSeqMsg.Tnlog {
+		//	logger.Info().Int("key", key).Int32("value", value).Msg("tnlog")
+		//}
+
+		//for key, value := range newSeqMsg.Tnlog {
+		//	logger.Info().Int("key", key).Int32("value", value).Msg("tnlog not cutted")
+		//}
+
+		//Ladon
+		//replcace its own htn before propose, make htn possibly higher
+		if config.Config.CrashTiming != "ByzantineStraggler" {
+			pi.htnLog[membership.OwnID] = membership.GetHtn()
+		}
+
+		//for key, value := range pi.htnLog {
+		//	logger.Debug().Int32("key", key).Int32("value", value).Msg("new rankset ")
+		//}
+		lock.Lock()
+		for _, value := range pi.htnLog {
+			newSeqMsg.Tnlog = append(newSeqMsg.Tnlog, value)
+		}
+		lock.Unlock()
+
+		//Ladon
+
+		if membership.SimulatedStraggler[int32(pi.segment.SegID())%int32(membership.NumNodes())] == 1 && (config.Config.CrashTiming == "ByzantineStraggler") && len(newSeqMsg.Tnlog) > membership.Quorum() {
+			// drop some high ranks(tn)
+			//sort.Ints(newSeqMsg.Tnlog)
+			//logger.Info().Msg("drop some high ranks")
+			sort.Slice(newSeqMsg.Tnlog, func(i, j int) bool { return newSeqMsg.Tnlog[i] < newSeqMsg.Tnlog[j] })
+			newSeqMsg.Tnlog = newSeqMsg.Tnlog[:membership.Quorum()]
+			//for key, value := range newSeqMsg.Tnlog {
+			//	logger.Info().Int("key", key).Int32("value", value).Msg("tnlog cutted")
+			//	}
+		}
+
+		htnToPropose := newSeqMsg.Tnlog[0]
+		for _, value := range newSeqMsg.Tnlog {
+			//logger.Info().Int32("tn", value).Msg("tn in rankset")
+			if value > htnToPropose {
+				htnToPropose = value
+			}
+		}
+		htnToPropose = htnToPropose + 1
+
+		//logger.Info().Int32("htnToPropose", htnToPropose).Int32("GetHtn", membership.GetHtn()).Msg("compare")
+
 		newSeqMsg.Tn = htnToPropose
 		membership.SetHtn(htnToPropose)
 		snFromHtnToPropose := htnToPropose*int32(membership.NumNodes()) + int32(pi.segment.SegID())
@@ -342,17 +392,17 @@ func (pi *pbftInstance) lead() {
 func (pi *pbftInstance) proposeSN(preprepare *pb.PbftPreprepare, sn int32) {
 
 	// Simulate a crash if configured so.
-	if membership.SimulatedCrashes[membership.OwnID] != nil {
+	// if membership.OwnID==0 && pi.view==0 {
 
-		if (config.Config.CrashTiming == "EpochStart" && sn == pi.segment.FirstSN()) ||
-			(config.Config.CrashTiming == "EpochEnd" && sn == pi.segment.LastSN()) {
+	// 	if (config.Config.CrashTiming == "EpochStart" && sn == pi.segment.FirstSN()) ||
+	// 		(config.Config.CrashTiming == "EpochEnd" && sn == pi.segment.LastSN()) {
 
-			logger.Info().Str("crashTiming", config.Config.CrashTiming).Msg("Simulating node crash.")
-			messenger.Crashed = true
+	// 		logger.Info().Str("crashTiming", config.Config.CrashTiming).Msg("Simulating node crash.")
+	// 		// messenger.Crashed = true
+	// 		time.Sleep(30*time.Second)
+	// 	}
 
-		}
-
-	}
+	// }
 
 	// New batches are proposed only in view 0
 	if pi.view > 0 {
@@ -361,7 +411,7 @@ func (pi *pbftInstance) proposeSN(preprepare *pb.PbftPreprepare, sn int32) {
 
 	// Simulate a straggler.
 	batchSize := pi.segment.BatchSize()
-	if membership.SimulatedCrashes[membership.OwnID] != nil && config.Config.CrashTiming == "Straggler" {
+	if membership.SimulatedCrashes[membership.OwnID] != nil && (config.Config.CrashTiming == "Straggler" || config.Config.CrashTiming == "ByzantineStraggler") {
 		// we cut an empty batch to maximize damage
 		batchSize = 4096
 	}
@@ -389,7 +439,11 @@ func (pi *pbftInstance) proposeSN(preprepare *pb.PbftPreprepare, sn int32) {
 		Int32("senderID", membership.OwnID).
 		Int("nReq", len(preprepare.Batch.Requests)).
 		Msg("Sending PREPREPARE.")
-
+	//Ladon
+	//for key, value := range preprepare.Tnlog {
+	//	logger.Info().Int("key", key).Int32("value", value).Msg("tnlog in preprepare")
+	//}
+	//Ladon
 	// Add message to own log
 	digest := pbftDigest(preprepare)
 	pi.batches[pi.view][sn].digest = digest
@@ -624,9 +678,9 @@ func (pi *pbftInstance) sendCommit(batch *pbftBatch) {
 
 	// Create message
 	commit := &pb.PbftCommit{
-		Sn:     batch.preprepareMsg.Sn,
+		Sn: batch.preprepareMsg.Sn,
 		// Ladon
-		Tn:     batch.preprepareMsg.Tn,
+		Tn: batch.preprepareMsg.Tn,
 		// Ladon
 		View:   pi.view,
 		Digest: batch.digest,
@@ -758,7 +812,7 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 		Int32("view", pi.view).
 		Int32("senderID", senderID).
 		Msg("Handling Htnmsg.")
-	
+
 	lock.Lock()
 	pi.htnLog[senderID] = htnmsg.Htn
 	lock.Unlock()
@@ -775,18 +829,24 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 
 	pi.htnRecv[sn] += 1
 	if pi.htnRecv[sn] == membership.Quorum() {
+		//for key, value := range pi.htnLog {
+		//	logger.Info().Int32("key", key).Int32("value", value).Msg("collect rankset")
+		//}
 		go func() {
 			logger.Info().Int32("sn", sn).Msg("<-pi.readyToPropose ready to propose next block !")
 			// If the channel not initialize, initialize it first.
+			lock.Lock()
 			if pi.readyToPropose[pi.lastProposeSn] == nil {
-				pi.readyToPropose[sn] = make(chan struct {})
+				pi.readyToPropose[sn] = make(chan struct{})
 			}
+			lock.Unlock()
 			pi.readyToPropose[sn] <- struct{}{}
 		}()
 	}
 
 	return nil
 }
+
 // Ladon
 
 func (pi *pbftInstance) handleMissingEntry(msg *pb.MissingEntry) {
@@ -830,21 +890,21 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 	// Only the batch has preprepareMsg can do Ladon
 	if batch.preprepareMsg != nil {
 		for i := pi.firstUncommitSn[batch.preprepareMsg.Leader]; i < sn; i += int32(membership.NumNodes()) {
-			if pi.batches[pi.view][i] != nil && ( pi.batches[pi.view][i].preprepareMsg != nil || len(pi.batches[pi.view][i].prepareMsgs) > 0 || len(pi.batches[pi.view][i].commitMsgs) > 0) {
+			if pi.batches[pi.view][i] != nil && (pi.batches[pi.view][i].preprepareMsg != nil || len(pi.batches[pi.view][i].prepareMsgs) > 0 || len(pi.batches[pi.view][i].commitMsgs) > 0) {
 				// Wait for previous block commit
 				logger.Debug().
-					Int32("i",i).
-					Int32("sn",sn).
+					Int32("i", i).
+					Int32("sn", sn).
 					Msg("Check if previous block is a valid block")
-				go func(){
+				go func() {
 					lock.Lock()
 					pi.alreadyCommit[i] = make(chan struct{})
 					commitChan := pi.alreadyCommit[i]
 					lock.Unlock()
 					<-commitChan
 					logger.Debug().
-						Int32("i",i).
-						Int32("sn",sn).
+						Int32("i", i).
+						Int32("sn", sn).
 						Msg("Previous valid block committed, announce current block again")
 					pi.announce(batch, sn, reqBatch, aborted, proposeTs, commitTs)
 				}()
@@ -898,10 +958,10 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 		// If some block is waiting for this block's commit, signal it.
 		lock.Lock()
 		if pi.alreadyCommit[sn] != nil {
-			logger.Debug().Int32("sn",sn).Msg("Block already committed.")
-			commitChan := pi.alreadyCommit[sn] 
+			logger.Debug().Int32("sn", sn).Msg("Block already committed.")
+			commitChan := pi.alreadyCommit[sn]
 			lock.Unlock()
-			go func(){
+			go func() {
 				commitChan <- struct{}{}
 			}()
 		} else {
@@ -1939,6 +1999,15 @@ func (pi *pbftInstance) handleNewView(signed *pb.SignedMsg, senderID int32) erro
 }
 
 func (pi *pbftInstance) processSerializedMessages() {
+	if membership.OwnID == 0 && pi.segment.FirstSN() < int32(membership.NumNodes()) {
+		if config.Config.CrashTiming == "EpochStart" {
+
+			logger.Info().Str("crashTiming", config.Config.CrashTiming).Msg("Simulating node crash.")
+			// messenger.Crashed = true
+			time.Sleep(30 * time.Second)
+		}
+	}
+
 	logger.Info().Int("segID", pi.segment.SegID()).Msg("Starting serialized message processing.")
 
 	for msg := range pi.serializer.channel {
