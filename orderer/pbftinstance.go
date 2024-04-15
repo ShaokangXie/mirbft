@@ -194,10 +194,10 @@ func (pi *pbftInstance) lead() {
 	batchSize := pi.segment.BatchSize()
 
 	// Simulate a straggler.
-	if membership.SimulatedCrashes[membership.OwnID] != nil && config.Config.CrashTiming == "Straggler" {
+	if membership.SimulatedStraggler[membership.OwnID] == 1 && config.Config.CrashTiming == "Straggler" {
 		config.Config.BatchTimeoutMs = int(0.5 * float64(config.Config.ViewChangeTimeoutMs))
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond
-		logger.Info().Str("byzantine", config.Config.CrashTiming).Int("batchTimeout", config.Config.BatchTimeoutMs)
+		logger.Info().Str("byzantine", config.Config.CrashTiming).Int("batchTimeout", config.Config.BatchTimeoutMs).Msg("byzantine effect !")
 		// we set the batchsize to an infinate practically size, so that we always wait for the timeout
 		batchSize = 1000000000
 	}
@@ -271,7 +271,7 @@ func (pi *pbftInstance) proposeSN(preprepare *pb.PbftPreprepare, sn int32) {
 
 	// Simulate a straggler.
 	batchSize := pi.segment.BatchSize()
-	if membership.SimulatedCrashes[membership.OwnID] != nil && config.Config.CrashTiming == "Straggler" {
+	if membership.SimulatedStraggler[membership.OwnID] == 1 && config.Config.CrashTiming == "Straggler" {
 		// we cut an empty batch to maximize damage
 		batchSize = 0
 	}
@@ -672,7 +672,21 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 		logEntry.Suspect = segmentLeader(pi.segment, 0)
 	}
 	// Announce decision.
+	logger.Info().
+		Int32("logEntry.Sn", logEntry.Sn).
+		Int32("origin_sn", sn).
+		Int("SegID", pi.segment.SegID()).
+		Msg("Get logEntry.Sn from tn. (Origin ISS Mode)")
 	announcer.Announce(logEntry)
+
+	// print request id.
+	// if (len(reqBatch.Requests)>0) {
+	// 	req_id:=make([]int32, len(reqBatch.Requests))
+	// 	for i:=0;i<len(reqBatch.Requests);i++ {
+	// 		req_id[i]=(reqBatch.Requests[i].RequestId.ClientSn)
+	// 	}
+	// 	logger.Debug().Int32("logEntry.Sn", logEntry.Sn).Msgf("req_id is: %v",req_id)
+	// }
 
 	// Start new view change timeout
 	// for the fist uncommitted sequence number in the segment

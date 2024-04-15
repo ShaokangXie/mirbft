@@ -51,6 +51,8 @@ var (
 	nodeIDs []int32
 
 	SimulatedCrashes map[int32]*pb.NodeIdentity
+
+	SimulatedStraggler map[int32]int32
 )
 
 // Initializes the Client key (to be changed at some point).
@@ -71,6 +73,7 @@ func Init() {
 	}
 
 	SimulatedCrashes = make(map[int32]*pb.NodeIdentity)
+	SimulatedStraggler = make(map[int32]int32)
 }
 
 // Initializes the known node identities.
@@ -101,6 +104,18 @@ func InitNodeIdentities(identities []*pb.NodeIdentity) {
 	})
 	for _, p := range allNodeIDs[:config.Config.Failures] {
 		SimulatedCrashes[p] = nodeIdentities[p]
+	}
+	// rand.Seed(config.Config.RandomSeed)
+	// for i := 0; i < config.Config.StragglerCnt; i++ {
+	// 	randi := int32(rand.Intn(len(allNodeIDs)))
+	// 	for SimulatedStraggler[randi] == 1 {
+	// 		randi = int32(rand.Intn(len(allNodeIDs)))
+	// 	}
+	// 	SimulatedStraggler[randi] = 1
+	// }
+	// logger.Debug().Msgf("SimulatedStraggler is %v", SimulatedStraggler)
+	for _, p := range allNodeIDs[:config.Config.StragglerCnt] {
+		SimulatedStraggler[p] = 1
 	}
 }
 
