@@ -39,10 +39,6 @@ const (
 	catchupDelay = 400 * time.Millisecond
 )
 
-var (
-	lock sync.Mutex
-)
-
 // TODO: Consolidate the segment-internal and the global checkpoints.
 
 // Represents a PBFT instance implementation.
@@ -202,10 +198,6 @@ func (pi *pbftInstance) lead() {
 		batchSize = 1000000000
 	}
 
-	go func() {
-		pi.readyToPropose <- struct{}{}
-	}()
-
 	// Send a proposal for each sequence number in the Segment.
 	for _, sn := range pi.segment.SNs() {
 
@@ -237,8 +229,11 @@ func (pi *pbftInstance) lead() {
 			},
 		}
 
-		<-pi.readyToPropose
-
+		if sn != pi.segment.FirstSN() {
+			logger.Debug().Int32("lastsn", sn-int32(membership.NumNodes())).Msg("Start waiting last sn committed!")
+			<-pi.readyToPropose
+			logger.Debug().Int32("sn", sn).Msg("Finish waiting to propose sn!")
+		}
 		pi.serializer.serialize(msg)
 
 		// Wait until the batch is actually cut. Otherwise this goroutine would just loop quickly through
@@ -650,8 +645,9 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 	// Mark batch as committed.
 	batch.committed = true
 
-	if sn != pi.segment.LastSN() {
+	if batch.preprepareMsg.Leader == membership.OwnID {
 		go func() {
+			logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
 			pi.readyToPropose <- struct{}{}
 		}()
 	}
