@@ -72,7 +72,7 @@ type pbftInstance struct {
 	startTs         int64 // Timestamp of the start of the instance. Used for estimating duration of segment.
 	htnLog          map[int32]int32
 	htnRecv         map[int32]int
-	readyToPropose  map[int32]chan struct{}
+	readyToPropose  chan struct{}
 	alreadyCommit   map[int32]chan struct{}
 	lastProposeSn   int32
 	firstUncommitSn map[int32]int32
@@ -202,7 +202,7 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	for i := 0; i < membership.NumNodes(); i++ {
 		pi.htnLog[int32(i)] = (int32(pi.segment.FirstSN()) - int32(pi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())
 	}
-	pi.readyToPropose = make(map[int32]chan struct{})
+	pi.readyToPropose = make(chan struct{})
 	pi.alreadyCommit = make(map[int32]chan struct{})
 
 	pi.lastProposeSn = -1
@@ -276,13 +276,10 @@ func (pi *pbftInstance) lead() {
 		// Wait for pi.readyToPropose signal (collect enough htn Msg)
 		// If it is the first sn, propose directly
 		if pi.lastProposeSn != -1 {
-			// If the channel not initialize, initialize it first.
-			lock.Lock()
-			if pi.readyToPropose[pi.lastProposeSn] == nil {
-				pi.readyToPropose[pi.lastProposeSn] = make(chan struct{})
-			}
-			lock.Unlock()
-			<-pi.readyToPropose[pi.lastProposeSn]
+			logger.Debug().Int32("lastsn", sn-int32(membership.NumNodes())).Msg("Start waiting last sn committed!")
+			<-pi.readyToPropose
+			logger.Debug().Int32("sn", sn).Msg("Finish waiting to propose sn!")
+
 		}
 
 		//Find max value in pi.htnlog
@@ -833,14 +830,10 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 		//	logger.Info().Int32("key", key).Int32("value", value).Msg("collect rankset")
 		//}
 		go func() {
-			logger.Info().Int32("sn", sn).Msg("<-pi.readyToPropose ready to propose next block !")
-			// If the channel not initialize, initialize it first.
-			lock.Lock()
-			if pi.readyToPropose[pi.lastProposeSn] == nil {
-				pi.readyToPropose[sn] = make(chan struct{})
-			}
-			lock.Unlock()
-			pi.readyToPropose[sn] <- struct{}{}
+			go func() {
+				logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
+				pi.readyToPropose <- struct{}{}
+			}()
 		}()
 	}
 
