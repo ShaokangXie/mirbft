@@ -200,7 +200,7 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.htnLog = make(map[int32]int32)
 	pi.htnRecv = make(map[int32]int)
 	for i := 0; i < membership.NumNodes(); i++ {
-		pi.htnLog[int32(i)] = (int32(pi.segment.FirstSN()) - int32(pi.segment.SegID())) / int32(membership.NumNodes())
+		pi.htnLog[int32(i)] = (int32(pi.segment.FirstSN()) - int32(pi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())
 	}
 	pi.readyToPropose = make(map[int32]chan struct{})
 	pi.alreadyCommit = make(map[int32]chan struct{})
@@ -343,7 +343,7 @@ func (pi *pbftInstance) lead() {
 
 		newSeqMsg.Tn = htnToPropose
 		membership.SetHtn(htnToPropose)
-		snFromHtnToPropose := htnToPropose*int32(membership.NumNodes()) + int32(pi.segment.SegID())
+		snFromHtnToPropose := htnToPropose*int32(membership.NumNodes()) + int32(pi.segment.SegID()%membership.NumNodes())
 
 		logger.Debug().
 			Int32("htnToPropose", htnToPropose).
