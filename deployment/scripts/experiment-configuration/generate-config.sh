@@ -45,7 +45,7 @@ failureCounts=(0) # For each system size, the corresponding failure count (on to
 fixBatchRate=true
 networkInterface="ens5"
 
-StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
 privKeyNumEachPeer=(10) # Using as buffer for lagged instance
 UseSig=(false)
 tnCheckpointCnt=(3)
@@ -124,7 +124,7 @@ throughputsAuthPbft=$()
 throughputsAuthPbft[4]="1024 2048 4096"
 #throughputsAuthPbft[4]="128"
 throughputsAuthPbft[8]="5000 10000 15000 20000 25000 30000 35000 40000 45000"
-throughputsAuthPbft[16]="40000 50000 60000"
+throughputsAuthPbft[16]="70000 80000 90000"
 throughputsAuthPbft[32]="35000"
 throughputsAuthPbft[64]="5000 10000 15000 20000 25000 30000 35000 40000 45000"
 throughputsAuthPbft[128]=""
