@@ -200,7 +200,7 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.htnLog = make(map[int32]int32)
 	pi.htnRecv = make(map[int32]int)
 	for i := 0; i < membership.NumNodes(); i++ {
-		pi.htnLog[int32(i)] = (int32(pi.segment.FirstSN()) - int32(pi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())
+		pi.htnLog[int32(i)] = (pi.segment.FirstSN() - int32(pi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())
 	}
 	pi.readyToPropose = make(chan struct{})
 	pi.alreadyCommit = make(map[int32]chan struct{})
@@ -368,11 +368,11 @@ func (pi *pbftInstance) lead() {
 
 		// Update related information for next proposal
 		pi.lastProposeSn = msg.Sn
-		lock.Lock()
-		for key, _ := range pi.htnLog {
-			pi.htnLog[key] = -1
-		}
-		lock.Unlock()
+		// lock.Lock()
+		// for key, _ := range pi.htnLog {
+		// 	pi.htnLog[key] = -1
+		// }
+		// lock.Unlock()
 
 		// Ladon
 
@@ -548,10 +548,10 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 
 	if !batch.prepared && isPrepared(batch) {
 		batch.prepared = true
+		// Ladon
+		pi.sendHtnMsg(batch.preprepareMsg.Sn, batch.preprepareMsg.Tn, batch.preprepareMsg.Leader)
+		// Ladon
 		pi.sendCommit(batch)
-		// Ladon
-		pi.sendHtnMsg(batch)
-		// Ladon
 	}
 
 	if !batch.committed && batch.CheckCommits() {
@@ -644,10 +644,10 @@ func (pi *pbftInstance) handlePrepare(prepare *pb.PbftPrepare, msg *pb.ProtocolM
 	if !batch.prepared && isPrepared(batch) {
 		batch.prepared = true
 		// TODO: does this order matter ?
+		// Ladon
+		pi.sendHtnMsg(batch.preprepareMsg.Sn, batch.preprepareMsg.Tn, batch.preprepareMsg.Leader)
+		// Ladon
 		pi.sendCommit(batch)
-		// Ladon
-		pi.sendHtnMsg(batch)
-		// Ladon
 	}
 
 	if !batch.committed && batch.CheckCommits() {
@@ -673,12 +673,15 @@ func (pi *pbftInstance) sendCommit(batch *pbftBatch) {
 		Int32("senderID", membership.OwnID).
 		Msg("Sending COMMIT.")
 
+	//Ladon
+	if batch.preprepareMsg.Tn > membership.GetHtn() {
+		membership.SetHtn(batch.preprepareMsg.Tn)
+	}
+	//Ladon
+
 	// Create message
 	commit := &pb.PbftCommit{
 		Sn: batch.preprepareMsg.Sn,
-		// Ladon
-		Tn: batch.preprepareMsg.Tn,
-		// Ladon
 		View:   pi.view,
 		Digest: batch.digest,
 	}
@@ -691,11 +694,6 @@ func (pi *pbftInstance) sendCommit(batch *pbftBatch) {
 		},
 	}
 
-	//Ladon
-	if commit.Tn > membership.GetHtn() {
-		membership.SetHtn(commit.Tn)
-	}
-	//Ladon
 	// This value will be overwritten by receivers.
 	// Setting it here, as this counts as local "reception" of the commit.
 	// The timestamp is not part of the digest.
@@ -768,9 +766,9 @@ func (pi *pbftInstance) handleCommit(commit *pb.PbftCommit, msg *pb.ProtocolMess
 }
 
 // Ladon
-func (pi *pbftInstance) sendHtnMsg(batch *pbftBatch) {
+func (pi *pbftInstance) sendHtnMsg(sn int32, tn int32, leader int32) {
 
-	logger.Debug().Int32("sn", batch.preprepareMsg.Sn).
+	logger.Debug().Int32("sn", sn).
 		Int32("tn", membership.GetHtn()).
 		Int32("view", pi.view).
 		Int32("senderID", membership.OwnID).
@@ -778,24 +776,23 @@ func (pi *pbftInstance) sendHtnMsg(batch *pbftBatch) {
 
 	// Create message
 	htnMsg := &pb.HtnMsg{
-		Sn:   batch.preprepareMsg.Sn,
-		Tn:   batch.preprepareMsg.Tn,
+		Sn:   sn,
+		Tn:   tn,
 		View: pi.view,
 		// Do not need compare, already compare in handle preprepare
 		Htn: membership.GetHtn(),
 	}
-	// pi.htnLog[membership.OwnID]
 
 	msg := &pb.ProtocolMessage{
 		SenderId: membership.OwnID,
-		Sn:       batch.preprepareMsg.Sn,
+		Sn:       sn,
 		Msg: &pb.ProtocolMessage_HtnMsg{
 			HtnMsg: htnMsg,
 		},
 	}
 
 	// Enqueue the htn message to the leader
-	messenger.EnqueueMsg(msg, batch.preprepareMsg.Leader)
+	messenger.EnqueuePriorityMsg(msg, leader)
 }
 
 func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage) error {
@@ -830,10 +827,8 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 		//	logger.Info().Int32("key", key).Int32("value", value).Msg("collect rankset")
 		//}
 		go func() {
-			go func() {
-				logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
-				pi.readyToPropose <- struct{}{}
-			}()
+			logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
+			pi.readyToPropose <- struct{}{}
 		}()
 	}
 
@@ -914,7 +909,7 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 				ProposeTs: proposeTs,
 				CommitTs:  commitTs,
 				Aborted:   aborted,
-				Digest:    batch.digest,
+				Digest:    nil,
 			}
 			logger.Info().Int32("sn", i).Msg("Commit the empty block.")
 			announcer.Announce(emptyEntry)
