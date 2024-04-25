@@ -245,9 +245,12 @@ func (pi *pbftInstance) lead() {
 		// However, as we know that the batch is ready (by having waited here), we will set the timeout of the actual
 		// batch cutting to 0. The signatures still need to be verified though, but the configuration option of early
 		// request verification should alleviate this problem.
+		start := time.Now()
 		logger.Debug().Int("batchSize", pi.segment.BatchSize()).Msg("Waiting for batch.")
 		pi.segment.Buckets().WaitForRequests(batchSize, config.Config.BatchTimeout)
 		logger.Debug().Int("batchSize", pi.segment.BatchSize()).Msg("Batch ready.")
+		waitTime := time.Since(start)
+		logger.Info().Int32("sn", sn).Int64("waitTime", waitTime.Milliseconds()).Msg("Finish waiting, batch ready.")
 
 		// Create message to serve as a placeholder for proposing a batch.
 		newSeqMsg := &pb.PbftPreprepare{
@@ -276,9 +279,10 @@ func (pi *pbftInstance) lead() {
 		// Wait for pi.readyToPropose signal (collect enough htn Msg)
 		// If it is the first sn, propose directly
 		if pi.lastProposeSn != -1 {
-			logger.Debug().Int32("lastsn", sn-int32(membership.NumNodes())).Msg("Start waiting last sn committed!")
+			start := time.Now()
 			<-pi.readyToPropose
-			logger.Debug().Int32("sn", sn).Msg("Finish waiting to propose sn!")
+			waitTime := time.Since(start)
+			logger.Info().Int32("sn", sn).Int64("waitTime", waitTime.Milliseconds()).Msg("Finish waiting, ready to propose!")
 
 		}
 
@@ -681,7 +685,7 @@ func (pi *pbftInstance) sendCommit(batch *pbftBatch) {
 
 	// Create message
 	commit := &pb.PbftCommit{
-		Sn: batch.preprepareMsg.Sn,
+		Sn:     batch.preprepareMsg.Sn,
 		View:   pi.view,
 		Digest: batch.digest,
 	}
@@ -768,7 +772,7 @@ func (pi *pbftInstance) handleCommit(commit *pb.PbftCommit, msg *pb.ProtocolMess
 // Ladon
 func (pi *pbftInstance) sendHtnMsg(sn int32, tn int32, leader int32) {
 
-	logger.Debug().Int32("sn", sn).
+	logger.Info().Int32("sn", sn).
 		Int32("tn", membership.GetHtn()).
 		Int32("view", pi.view).
 		Int32("senderID", membership.OwnID).
@@ -792,7 +796,9 @@ func (pi *pbftInstance) sendHtnMsg(sn int32, tn int32, leader int32) {
 	}
 
 	// Enqueue the htn message to the leader
-	messenger.EnqueuePriorityMsg(msg, leader)
+	if leader != membership.OwnID {
+		messenger.EnqueuePriorityMsg(msg, leader)
+	}
 }
 
 func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage) error {
