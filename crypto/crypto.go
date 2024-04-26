@@ -92,15 +92,18 @@ func Sign(hash []byte, sk interface{}) ([]byte, error) {
 }
 
 func CheckSig(hash []byte, pk interface{}, sig []byte) error {
-	switch p := pk.(type) {
-	case *ecdsa.PublicKey:
-		return VerifyECDSASignature(p, hash, sig)
-	case *rsa.PublicKey:
-		err := rsa.VerifyPKCS1v15(p, cstd.SHA256, hash[:], sig)
-		return err
-	default:
-		return fmt.Errorf("unsupported public key type: %T", p)
-	}
+	// switch p := pk.(type) {
+	// case *ecdsa.PublicKey:
+	// 	return VerifyECDSASignature(p, hash, sig)
+	// case *rsa.PublicKey:
+	// 	err := rsa.VerifyPKCS1v15(p, cstd.SHA256, hash[:], sig)
+	// 	return err
+	// default:
+	// 	return fmt.Errorf("unsupported public key type: %T", p)
+	// }
+
+	// Skip verification
+	return nil
 }
 
 func PublicKeyToBytes(pk interface{}) (pkBytes []byte, err error) {

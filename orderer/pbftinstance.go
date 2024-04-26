@@ -200,7 +200,7 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.htnLog = make(map[int32]int32)
 	pi.htnRecv = make(map[int32]int)
 	for i := 0; i < membership.NumNodes(); i++ {
-		pi.htnLog[int32(i)] = (pi.segment.FirstSN() - int32(pi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())
+		pi.htnLog[int32(i)] = ((pi.segment.FirstSN() - int32(pi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())) - 1
 	}
 	pi.readyToPropose = make(chan struct{})
 	pi.alreadyCommit = make(map[int32]chan struct{})
@@ -476,7 +476,7 @@ func (pi *pbftInstance) proposeSN(preprepare *pb.PbftPreprepare, sn int32) {
 }
 
 func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.ProtocolMessage) error {
-	start := time.Now()
+	// start := time.Now()
 
 	// Convenience variables
 	sn := msg.Sn
@@ -515,11 +515,11 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 		return fmt.Errorf("instance %d does not handle sequence number %d", pi.segment.SegID(), preprepare.Sn)
 	}
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 0")
-	start = time.Now()
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 0")
+	// start = time.Now()
 
 	batch := pi.batches[pi.view][sn]
 	// Check whether the batch has been already committed (this can be the case due to state transfer)
@@ -533,20 +533,20 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 		return fmt.Errorf("duplicate preprepare from %d for sn %d", senderID, sn)
 	}
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 1")
-	start = time.Now()
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 1")
+	// start = time.Now()
 
 	// Check that proposal requests are valid
 	batch.batch = request.NewBatch(preprepare.Batch)
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 2")
-	start = time.Now()
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 2")
+	// start = time.Now()
 
 	if batch.batch == nil {
 		logger.Error().Int32("peerId", senderID).Int32("sn", sn).Msg("Invalid requests in proposal.")
@@ -564,11 +564,11 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 	// Mark requests as preprepared
 	batch.batch.MarkInFlight()
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 3")
-	start = time.Now()
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 3")
+	// start = time.Now()
 
 	// Create new batch
 	digest := pbftDigest(preprepare)
@@ -576,19 +576,19 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 	batch.preprepareMsg = preprepare
 	batch.preprepared = true
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 4")
-	start = time.Now()
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 4")
+	// start = time.Now()
 
 	pi.sendPrepare(batch)
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 5")
-	start = time.Now()
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 5")
+	// start = time.Now()
 
 	if !batch.prepared && isPrepared(batch) {
 		batch.prepared = true
@@ -598,11 +598,11 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 		pi.sendCommit(batch)
 	}
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 6")
-	start = time.Now()
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 6")
+	// start = time.Now()
 
 	if !batch.committed && batch.CheckCommits() {
 
@@ -617,10 +617,10 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 		pi.announce(batch, sn, preprepare.Batch, preprepare.Aborted, preprepare.Ts, batch.lastCommitTs)
 	}
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 7")
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Int64("costTime", time.Since(start).Milliseconds()).
+	// 	Msg("handlepreprepare 7")
 
 	return nil
 }
@@ -2111,13 +2111,13 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 				Int32("senderID", msg.SenderId).
 				Msg("PbftOrderer ignores prepare message.")
 		}
-		timeCost := time.Since(start).Milliseconds()
-		if timeCost > 0 {
-			logger.Info().
-				Int64("costTime", timeCost).
-				Str("msg", "Prepare").
-				Msg("handlemessage cost.")
-		}
+		// timeCost := time.Since(start).Milliseconds()
+		// if timeCost > 0 {
+		// 	logger.Info().
+		// 		Int64("costTime", timeCost).
+		// 		Str("msg", "Prepare").
+		// 		Msg("handlemessage cost.")
+		// }
 	case *pb.ProtocolMessage_Commit:
 		err := pi.handleCommit(m.Commit, msg)
 		if err != nil {
@@ -2127,13 +2127,13 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 				Int32("senderID", msg.SenderId).
 				Msg("PbftOrderer cannot handle commit message.")
 		}
-		timeCost := time.Since(start).Milliseconds()
-		if timeCost > 0 {
-			logger.Info().
-				Int64("costTime", timeCost).
-				Str("msg", "Commit").
-				Msg("handlemessage cost.")
-		}
+		// timeCost := time.Since(start).Milliseconds()
+		// if timeCost > 0 {
+		// 	logger.Info().
+		// 		Int64("costTime", timeCost).
+		// 		Str("msg", "Commit").
+		// 		Msg("handlemessage cost.")
+		// }
 	// Ladon
 	case *pb.ProtocolMessage_HtnMsg:
 		err := pi.handleHtnmsg(m.HtnMsg, msg)
@@ -2144,13 +2144,13 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 				Int32("senderID", msg.SenderId).
 				Msg("PbftOrderer cannot handle htnmsg message.")
 		}
-		timeCost := time.Since(start).Milliseconds()
-		if timeCost > 0 {
-			logger.Info().
-				Int64("costTime", timeCost).
-				Str("msg", "HtnMsg").
-				Msg("handlemessage cost.")
-		}
+		// timeCost := time.Since(start).Milliseconds()
+		// if timeCost > 0 {
+		// 	logger.Info().
+		// 		Int64("costTime", timeCost).
+		// 		Str("msg", "HtnMsg").
+		// 		Msg("handlemessage cost.")
+		// }
 	// Ladon
 	case *pb.ProtocolMessage_PbftCheckpoint:
 		err := pi.handlePBFTCheckpoint(m.PbftCheckpoint, msg.SenderId)
@@ -2166,11 +2166,11 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 	case *pb.ProtocolMessage_Newseqno:
 		preprepare := m.Newseqno
 		pi.proposeSN(preprepare, msg.Sn)
-		timeCost := time.Since(start).Milliseconds()
-		logger.Info().
-			Int64("costTime", timeCost).
-			Str("msg", "Newseqno").
-			Msg("handlemessage cost.")
+		// timeCost := time.Since(start).Milliseconds()
+		// logger.Info().
+		// 	Int64("costTime", timeCost).
+		// 	Str("msg", "Newseqno").
+		// 	Msg("handlemessage cost.")
 	case *pb.ProtocolMessage_Viewchange:
 		signed := m.Viewchange
 		err := pi.handleViewChange(signed, msg.SenderId)
