@@ -17,10 +17,10 @@ package request
 import (
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/log"
 	"github.com/hyperledger-labs/mirbft/util"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Buffers Requests from a single client.
@@ -28,7 +28,8 @@ import (
 // The Buffer also maintains a backlog of requests with client sequence numbers higher than the watermark window.
 // When the capacity of the backlog is exceeded, requests above the watermark window cannot be added.
 // ATTENTION! While the Buffer can be locked, not all methods are thread-safe.
-//            No two goroutines must access the buffer concurrently without proper synchronization.
+//
+//	No two goroutines must access the buffer concurrently without proper synchronization.
 type Buffer struct {
 	// Any modification (or read of potentially concurrently modified values)
 	// of the request buffer requires acquiring this lock.
@@ -78,7 +79,8 @@ func NewBuffer(clientID int32) *Buffer {
 // If the request is not part of the buffer after the call to Add() (it has been ignored or backlogged),
 // Add() returns nil.
 // ATTENTION: The Add() method does not lock the buffer (as it is also called from another method that does).
-//            Still, the Buffer must be locked when calling Add().
+//
+//	Still, the Buffer must be locked when calling Add().
 func (b *Buffer) Add(req *Request) bool {
 
 	// Convenience variables
@@ -107,17 +109,16 @@ func (b *Buffer) Add(req *Request) bool {
 		// Request is below the client watermark window.
 		// Ignore it.
 	} else if clientSN < b.LowWatermark {
-		// logger.Debug().
-		// 	Int32("lowWM", b.LowWatermark).
-		// 	Int32("windowSize", clientWatermarkWindowSize).
-		// 	Int32("clSn", clientSN).
-		// 	Int32("clId", req.Msg.RequestId.ClientId).
-		// 	Msg("Request sequence number below client's watermark window.")
+		logger.Debug().
+			Int32("lowWM", b.LowWatermark).
+			Int32("windowSize", clientWatermarkWindowSize).
+			Int32("clSn", clientSN).
+			Int32("clId", req.Msg.RequestId.ClientId).
+			Msg("Request sequence number below client's watermark window.")
 
-		// // Request not present in the bucket at this point.
-		// // Do not retry with a verified signature.
-		// return false
-		return true
+		// Request not present in the bucket at this point.
+		// Do not retry with a verified signature.
+		return false
 
 		// Request is within the current watermark window.
 		// Try adding it to the bucket.

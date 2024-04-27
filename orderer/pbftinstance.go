@@ -199,9 +199,11 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	// Initialize the htnLog and htnRecv
 	pi.htnLog = make(map[int32]int32)
 	pi.htnRecv = make(map[int32]int)
+	lock.Lock()
 	for i := 0; i < membership.NumNodes(); i++ {
 		pi.htnLog[int32(i)] = ((pi.segment.FirstSN() - int32(pi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())) - 1
 	}
+	lock.Unlock()
 	pi.readyToPropose = make(chan struct{})
 	pi.alreadyCommit = make(map[int32]chan struct{})
 
@@ -306,7 +308,9 @@ func (pi *pbftInstance) lead() {
 		//Ladon
 		//replcace its own htn before propose, make htn possibly higher
 		if config.Config.CrashTiming != "ByzantineStraggler" {
+			lock.Lock()
 			pi.htnLog[membership.OwnID] = membership.GetHtn()
+			lock.Unlock()
 		}
 
 		//for key, value := range pi.htnLog {
@@ -878,8 +882,10 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 	// 	logger.Debug().Int32("key", key).Int32("value", value).Msg("In lead, pi.htnLog !")
 	// }
 
+	lock.Lock()
 	pi.htnRecv[sn] += 1
 	if pi.htnRecv[sn] == membership.Quorum() {
+		lock.Unlock()
 		//for key, value := range pi.htnLog {
 		//	logger.Info().Int32("key", key).Int32("value", value).Msg("collect rankset")
 		//}
@@ -888,6 +894,7 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 			pi.readyToPropose <- struct{}{}
 		}()
 	}
+	lock.Unlock()
 
 	return nil
 }
@@ -934,6 +941,7 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 	// Ladon
 	// Only the batch has preprepareMsg can do Ladon
 	if batch.preprepareMsg != nil {
+		lock.Lock()
 		for i := pi.firstUncommitSn[batch.preprepareMsg.Leader]; i < sn; i += int32(membership.NumNodes()) {
 			if pi.batches[pi.view][i] != nil && (pi.batches[pi.view][i].preprepareMsg != nil || len(pi.batches[pi.view][i].prepareMsgs) > 0 || len(pi.batches[pi.view][i].commitMsgs) > 0) {
 				// Wait for previous block commit
@@ -956,8 +964,10 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 				return
 			}
 		}
+		lock.Unlock()
 
 		// Ladon: Commit the empty block
+		lock.Lock()
 		for i := pi.firstUncommitSn[batch.preprepareMsg.Leader]; i < sn; i += int32(membership.NumNodes()) {
 			emptyBatch := &request.Batch{Requests: make([]*request.Request, 0, 0)}
 			emptyEntry := &log.Entry{
@@ -973,6 +983,7 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 			// TODO: Why so many log "WRN Not overwriting log entry."
 			pi.batches[pi.view][i] = &pbftBatch{committed: true}
 		}
+		lock.Unlock()
 	}
 	// Ladon
 
@@ -999,9 +1010,9 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 
 	// Ladon
 	if batch.preprepareMsg != nil {
+		lock.Lock()
 		pi.firstUncommitSn[batch.preprepareMsg.Leader] = sn + int32(membership.NumNodes())
 		// If some block is waiting for this block's commit, signal it.
-		lock.Lock()
 		if pi.alreadyCommit[sn] != nil {
 			logger.Debug().Int32("sn", sn).Msg("Block already committed.")
 			commitChan := pi.alreadyCommit[sn]
