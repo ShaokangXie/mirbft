@@ -69,13 +69,14 @@ type pbftInstance struct {
 	stopProp          sync.Once
 	//	next              int // The index  of the next to be proposed SN
 	// Ladon
-	startTs         int64 // Timestamp of the start of the instance. Used for estimating duration of segment.
-	htnLog          map[int32]int32
-	htnRecv         map[int32]int
-	readyToPropose  chan struct{}
-	alreadyCommit   map[int32]chan struct{}
-	lastProposeSn   int32
-	firstUncommitSn map[int32]int32
+	startTs              int64 // Timestamp of the start of the instance. Used for estimating duration of segment.
+	htnLog               map[int32]int32
+	htnRecv              map[int32]int
+	readyToPropose       chan struct{}
+	alreadyCommit        map[int32]chan struct{}
+	waitForPreviousBlock map[int32][]int32
+	lastProposeSn        int32
+	firstUncommitSn      map[int32]int32
 	// Ladon
 }
 
@@ -206,6 +207,7 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	lock.Unlock()
 	pi.readyToPropose = make(chan struct{})
 	pi.alreadyCommit = make(map[int32]chan struct{})
+	pi.waitForPreviousBlock = make(map[int32][]int32)
 
 	pi.lastProposeSn = -1
 	pi.firstUncommitSn = make(map[int32]int32)
@@ -223,7 +225,7 @@ func (pi *pbftInstance) lead() {
 	// Simulate a straggler.
 	if membership.SimulatedStraggler[int32(pi.segment.SegID())%int32(membership.NumNodes())] == 1 && (config.Config.CrashTiming == "Straggler" || config.Config.CrashTiming == "ByzantineStraggler") {
 		//if config.Config.CrashTiming == "Straggler" {
-		config.Config.BatchTimeoutMs = int(0.16666667 * float64(config.Config.ViewChangeTimeoutMs))
+		config.Config.BatchTimeoutMs = int(0.0416666666666667 * float64(config.Config.ViewChangeTimeoutMs))
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond
 		logger.Info().Str("byzantine", config.Config.CrashTiming).Int("batchTimeout", config.Config.BatchTimeoutMs).Msg("byzantine effected !")
 		// we set the batchsize to an infinate practically size, so that we always wait for the timeout
@@ -282,6 +284,7 @@ func (pi *pbftInstance) lead() {
 		// If it is the first sn, propose directly
 		if pi.lastProposeSn != -1 {
 			start := time.Now()
+			logger.Info().Int32("sn", sn).Msg("Start waiting, ready to propose!")
 			<-pi.readyToPropose
 			waitTime := time.Since(start)
 			logger.Info().Int32("sn", sn).Int64("waitTime", waitTime.Milliseconds()).Msg("Finish waiting, ready to propose!")
@@ -528,7 +531,7 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 	batch := pi.batches[pi.view][sn]
 	// Check whether the batch has been already committed (this can be the case due to state transfer)
 	if batch.committed {
-		logger.Debug().Msg("Ignoring PREPREPARE message. Batch already committed.")
+		logger.Error().Msg("Ignoring PREPREPARE message. Batch already committed.")
 		return nil
 	}
 	// Check that no other batch is preprepared for the same sequence number in this view
@@ -617,14 +620,17 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 		//	logger.Warn().Int32("sn", sn).Int("segID", pi.segment.SegID()).Int32("ownID", membership.OwnID).Msg("DEBUG: not committing!")
 		//	return nil
 		//}
-
+		// logger.Info().
+		// 	Int32("sn", sn).
+		// 	Int64("costTime", time.Since(start).Milliseconds()).
+		// 	Msg("handlepreprepare 7")
 		pi.announce(batch, sn, preprepare.Batch, preprepare.Aborted, preprepare.Ts, batch.lastCommitTs)
 	}
 
 	// logger.Info().
 	// 	Int32("sn", sn).
 	// 	Int64("costTime", time.Since(start).Milliseconds()).
-	// 	Msg("handlepreprepare 7")
+	// 	Msg("handlepreprepare 8")
 
 	return nil
 }
@@ -697,6 +703,14 @@ func (pi *pbftInstance) handlePrepare(prepare *pb.PbftPrepare, msg *pb.ProtocolM
 	batch := pi.batches[pi.view][sn]
 	if _, ok := batch.prepareMsgs[senderID]; ok {
 		return fmt.Errorf("duplicate prepare message from %d", senderID)
+	}
+	if batch.prepareMsgs == nil {
+		logger.Info().Int32("sn", msg.Sn).Msg("batch.prepareMsgs == nil, rehandle it.")
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			pi.handlePrepare(prepare, msg)
+		}()
+		return nil
 	}
 	batch.prepareMsgs[senderID] = prepare
 
@@ -806,6 +820,13 @@ func (pi *pbftInstance) handleCommit(commit *pb.PbftCommit, msg *pb.ProtocolMess
 	if _, ok := batch.commitMsgs[senderID]; ok {
 		return fmt.Errorf("duplicate commit message from %d", senderID)
 	}
+	if batch.commitMsgs == nil {
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			pi.handleCommit(commit, msg)
+		}()
+		return nil
+	}
 	batch.commitMsgs[senderID] = commit
 
 	if !batch.committed && batch.CheckCommits() {
@@ -852,7 +873,7 @@ func (pi *pbftInstance) sendHtnMsg(sn int32, tn int32, leader int32) {
 
 	// Enqueue the htn message to the leader
 	if leader != membership.OwnID {
-		messenger.EnqueuePriorityMsg(msg, leader)
+		messenger.EnqueueMsg(msg, leader)
 	}
 }
 
@@ -890,12 +911,12 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 		//	logger.Info().Int32("key", key).Int32("value", value).Msg("collect rankset")
 		//}
 		go func() {
-			logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
+			logger.Info().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
 			pi.readyToPropose <- struct{}{}
 		}()
+	} else {
+		lock.Unlock()
 	}
-	lock.Unlock()
-
 	return nil
 }
 
@@ -938,37 +959,70 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 		}
 	}
 
+	lock.Lock()
+	if batch.committed {
+		lock.Unlock()
+		return
+	}
+	lock.Unlock()
+
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Msg("announce 1")
+
 	// Ladon
 	// Only the batch has preprepareMsg can do Ladon
 	if batch.preprepareMsg != nil {
 		lock.Lock()
-		for i := pi.firstUncommitSn[batch.preprepareMsg.Leader]; i < sn; i += int32(membership.NumNodes()) {
+		firstUncommitSn := pi.firstUncommitSn[batch.preprepareMsg.Leader]
+		lock.Unlock()
+		// TODO: Check if there is previous valid block!
+		for i := firstUncommitSn; i < sn; i += int32(membership.NumNodes()) {
 			if pi.batches[pi.view][i] != nil && (pi.batches[pi.view][i].preprepareMsg != nil || len(pi.batches[pi.view][i].prepareMsgs) > 0 || len(pi.batches[pi.view][i].commitMsgs) > 0) {
+				lock.Lock()
+				// if pi.alreadyCommit[i] == nil {
+				// 	pi.alreadyCommit[i] = make(chan struct{})
+				// }
+				// commitChan := pi.alreadyCommit[i]
+
+				pi.waitForPreviousBlock[i] = append(pi.waitForPreviousBlock[i], sn)
+				lock.Unlock()
+
 				// Wait for previous block commit
-				logger.Debug().
+				// logger.Info().
+				// Int32("i", i).
+				// Int32("sn", sn).
+				// Msg("Check if previous block is a valid block")
+
+				logger.Info().
 					Int32("i", i).
 					Int32("sn", sn).
-					Msg("Check if previous block is a valid block")
-				go func() {
-					lock.Lock()
-					pi.alreadyCommit[i] = make(chan struct{})
-					commitChan := pi.alreadyCommit[i]
-					lock.Unlock()
-					<-commitChan
-					logger.Debug().
-						Int32("i", i).
-						Int32("sn", sn).
-						Msg("Previous valid block committed, announce current block again")
-					pi.announce(batch, sn, reqBatch, aborted, proposeTs, commitTs)
-				}()
+					Msg("announce 11")
+
+				// go func() {
+				// 	logger.Info().
+				// 		Int32("i", i).
+				// 		Int32("sn", sn).
+				// 		Msg("announce 11")
+
+				// 	<-commitChan
+
+				// 	logger.Debug().
+				// 		Int32("i", i).
+				// 		Int32("sn", sn).
+				// 		Msg("Previous valid block committed, announce current block again")
+				// 	pi.announce(batch, sn, reqBatch, aborted, proposeTs, commitTs)
+				// }()
 				return
 			}
 		}
-		lock.Unlock()
+
+		// logger.Info().
+		// 	Int32("sn", sn).
+		// 	Msg("announce 2")
 
 		// Ladon: Commit the empty block
-		lock.Lock()
-		for i := pi.firstUncommitSn[batch.preprepareMsg.Leader]; i < sn; i += int32(membership.NumNodes()) {
+		for i := firstUncommitSn; i < sn; i += int32(membership.NumNodes()) {
 			emptyBatch := &request.Batch{Requests: make([]*request.Request, 0, 0)}
 			emptyEntry := &log.Entry{
 				Sn:        i,
@@ -983,9 +1037,12 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 			// TODO: Why so many log "WRN Not overwriting log entry."
 			pi.batches[pi.view][i] = &pbftBatch{committed: true}
 		}
-		lock.Unlock()
 	}
 	// Ladon
+
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Msg("announce 3")
 
 	// Mark batch as committed.
 	batch.committed = true
@@ -1008,21 +1065,35 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 	// Announce decision.
 	announcer.Announce(logEntry)
 
+	// logger.Info().
+	// 	Int32("sn", sn).
+	// 	Msg("announce 4")
+
 	// Ladon
 	if batch.preprepareMsg != nil {
 		lock.Lock()
 		pi.firstUncommitSn[batch.preprepareMsg.Leader] = sn + int32(membership.NumNodes())
-		// If some block is waiting for this block's commit, signal it.
-		if pi.alreadyCommit[sn] != nil {
-			logger.Debug().Int32("sn", sn).Msg("Block already committed.")
-			commitChan := pi.alreadyCommit[sn]
-			lock.Unlock()
-			go func() {
-				commitChan <- struct{}{}
-			}()
-		} else {
-			lock.Unlock()
+		// If some block is waiting for this block's commit, commit it.
+		commitList := pi.waitForPreviousBlock[sn]
+		lock.Unlock()
+		if len(commitList) > 0 {
+			sort.Slice(commitList, func(i, j int) bool {
+				return commitList[i] < commitList[j]
+			})
+			for _, value := range commitList {
+				if _, ok := pi.batches[pi.view][value]; !ok {
+					logger.Error().Msgf("instance %d does not handle sequence numer %d", pi.segment.SegID(), value)
+				}
+				// logger.Info().
+				// 	Int32("value", value).
+				// 	Int32("sn", sn).
+				// 	Msg("announce 41")
+
+				batch := pi.batches[pi.view][value]
+				pi.announce(batch, value, batch.preprepareMsg.Batch, batch.preprepareMsg.Aborted, batch.preprepareMsg.Ts, batch.lastCommitTs)
+			}
 		}
+
 	}
 	// Ladon
 

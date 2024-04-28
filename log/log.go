@@ -17,9 +17,9 @@ package log
 import (
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	logger "github.com/rs/zerolog/log"
 )
 
 const (
@@ -82,6 +82,9 @@ func CommitEntry(entry *Entry) {
 	// transfer protocol already has been triggered.
 	if _, loaded := entries.LoadOrStore(entry.Sn, entry); loaded {
 		logger.Warn().Int32("sn", entry.Sn).Msg("Not overwriting log entry.")
+		if entry.Batch != nil {
+			entries.Store(entry.Sn, entry)
+		}
 		return
 	}
 
@@ -162,11 +165,12 @@ func EntriesOutOfOrder() chan *Entry {
 
 // Blocks until entry with sequence number sn and all previous entries are committed.
 // TODO: Do we really want to wait until all previous entries are committed too?
-//       This can unnecessarily delay a segment just because there is a hole somewhere in the past.
-//       (Move the notification to CommitEntry instead of PublishEntries?, If yes, watch out for the lock!)
-//       Added after changes to the SimpleCheckpointer:
-//         SimpleCheckpointer relies on the absence of holes guaranteed by WaitForEntry.
-//         The Manager relies on the absence of holes for consistent watermark advancement.
+//
+//	This can unnecessarily delay a segment just because there is a hole somewhere in the past.
+//	(Move the notification to CommitEntry instead of PublishEntries?, If yes, watch out for the lock!)
+//	Added after changes to the SimpleCheckpointer:
+//	  SimpleCheckpointer relies on the absence of holes guaranteed by WaitForEntry.
+//	  The Manager relies on the absence of holes for consistent watermark advancement.
 func WaitForEntry(sn int32) {
 
 	// Need this lock to protect from concurrent publishers.
