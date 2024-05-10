@@ -178,7 +178,7 @@ func (bg *BucketGroup) waitForRequestsLocked(numRequests int, timeout time.Durat
 	// If there are enough requests in the bucket, return immediately.
 	// if timeout == 0 {
 	// Ladon: Hard limit of batchrate !
-	if int(bg.totalRequests) >= numRequests && (timeout == 0) {
+	if int(bg.totalRequests) >= numRequests || (timeout == 0) {
 		return
 	}
 

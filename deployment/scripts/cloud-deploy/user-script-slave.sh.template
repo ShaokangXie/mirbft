@@ -84,7 +84,8 @@ apt-get -y install \
 	git \
 	openssl \
 	jq \
-	graphviz
+	graphviz \
+  libc6
 
 # echo "Installing cmap for go."
 # go get -u github.com/orcaman/concurrent-map
