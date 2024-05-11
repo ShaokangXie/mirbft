@@ -14,10 +14,10 @@ peer_num=${num_arr[1]}
 
 # "us-east-2" "lt-0e560d976efbab859"
 # "ap-southeast-2" "lt-0a82b62ee3edca658"
-region_list=("us-east-1" "eu-west-2" "ap-northeast-2")
+region_list=("us-east-1" "eu-west-2" "ap-northeast-2" "ap-southeast-2")
 region_cnt=${#region_list[@]}
 region_need_add_one=$(($totalnum%$region_cnt))
-LaunchTemplateId_list=("lt-0854465890b2cf8e9" "lt-02621b1435fdd7f28" "lt-0b0483638d66438f2")
+LaunchTemplateId_list=("lt-0854465890b2cf8e9" "lt-02621b1435fdd7f28" "lt-0b0483638d66438f2" "lt-0a82b62ee3edca658")
 
 if [ "$1" = "-i" ]; then
     echo "Init"
