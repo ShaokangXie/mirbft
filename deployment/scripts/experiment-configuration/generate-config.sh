@@ -45,7 +45,7 @@ failureCounts=(0) # For each system size, the corresponding failure count (on to
 fixBatchRate=true
 networkInterface="ens5"
 
-StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+StragglerCnt=(2) # Count of Straggler (Only effect when crashTimings is 'Straggler')
 privKeyNumEachPeer=(10) # Using as buffer for lagged instance
 UseSig=(false)
 tnCheckpointCnt=(3)
@@ -75,7 +75,7 @@ orderers="Pbft"             # Possible values: Pbft HotStuff Raft Dummy
 checkpointers="Signing"
 
 # Parameters chosen for experiments
-durations="120"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
+durations="60"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
 bandwidths="1gbit"         # any value accepted by the tc command or "unlimited" !!! ATTENTION: Adapt MaxProposeDataRate in config accordingly !!!
 payloadSizes="500"         # [Bytes]
 fixedEpochLength=false
@@ -124,7 +124,7 @@ throughputsAuthPbft=$()
 throughputsAuthPbft[4]="1024 2048 4096"
 #throughputsAuthPbft[4]="128"
 throughputsAuthPbft[8]="5000 10000 15000 20000 25000 30000 35000 40000 45000"
-throughputsAuthPbft[16]="70000 80000 90000"
+throughputsAuthPbft[16]="10000 20000 50000"
 throughputsAuthPbft[32]="35000"
 throughputsAuthPbft[64]="5000 10000 15000 20000 25000 30000 35000 40000 45000"
 throughputsAuthPbft[128]=""

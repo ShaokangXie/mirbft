@@ -12,11 +12,12 @@ peer_num=${num_arr[1]}
 # echo $client_num
 # echo $peer_num
 
-# "eu-west-3" "ap-northeast-1" "ap-southeast-2" "lt-09d0c9f2409b1ed85" "lt-0caead15e0ffbe385" "lt-0a82b62ee3edca658"
-region_list=("us-east-2")
+# "us-east-2" "lt-0e560d976efbab859"
+# "ap-southeast-2" "lt-0a82b62ee3edca658"
+region_list=("us-east-1" "eu-west-2" "ap-northeast-2" "ap-southeast-2")
 region_cnt=${#region_list[@]}
 region_need_add_one=$(($totalnum%$region_cnt))
-LaunchTemplateId_list=("lt-0e560d976efbab859")
+LaunchTemplateId_list=("lt-0854465890b2cf8e9" "lt-02621b1435fdd7f28" "lt-0b0483638d66438f2" "lt-0a82b62ee3edca658")
 
 if [ "$1" = "-i" ]; then
     echo "Init"
@@ -42,8 +43,8 @@ if [ "$1" = "-i" ]; then
              --count $count)
         done
 
-        echo "sleep 40 seconds"
-        sleep 40
+        echo "sleep 60 seconds"
+        sleep 60
     else
         sleep 0.1
     fi
@@ -55,7 +56,7 @@ if [ "$1" = "-i" ]; then
         aws configure set region $region
         public_ip+=$(
         aws ec2 describe-instances   \
-        --filter "Name=network-interface.status,Values=available,in-use"   \
+        --filters "Name=tag:Name,Values=Parallel-bft-instance" "Name=instance-state-name,Values=running" \
         --query "Reservations[*].Instances[*].PublicIpAddress"   \
         --output=text)
         public_ip+=" "
@@ -76,23 +77,6 @@ if [ "$1" = "-i" ]; then
     public_ip_arr=(`echo $public_ip | tr ',' ' '`)
     private_ip_arr=(`echo $private_ip | tr ',' ' '`)
 
-    # size=$totalnum
-    # max=$(( 32768 / size * size ))
-    # for ((i=size-1; i>1; i--)); do
-    #     while (( (rand=$RANDOM) >= max )); do :; done
-    #     rand=$(( rand % (i+1) ))
-    #     if [[ "$rand" == 0 ]]; then
-    #         ((i++))
-    #         continue
-    #     fi
-    #     tmp=${public_ip_arr[i]}  # swap i and rand-th element
-    #     public_ip_arr[i]=${public_ip_arr[rand]}
-    #     public_ip_arr[rand]=$tmp
-    #     tmp=${private_ip_arr[i]}  # swap i and rand-th element in the second array
-    #     private_ip_arr[i]=${private_ip_arr[rand]}
-    #     private_ip_arr[rand]=$tmp
-    # done
-    
     echo ${public_ip_arr[@]}
     echo ${private_ip_arr[@]}
 
@@ -139,12 +123,27 @@ if [ "$1" = "-i" ]; then
 
         echo "End set ssh key..."
 
+        # for i in "${public_ip_arr[@]}"
+        # do
+        #     ssh $ssh_options_cloud root@$i 'sudo tc qdisc add dev ens5 root netem delay 90ms 20ms' &
+        #     echo 'End setting delay...'
+        # done
+        # wait
+
         for i in "${public_ip_arr[@]}"
         do
-            ssh $ssh_options_cloud root@$i 'sudo tc qdisc add dev ens5 root netem delay 90ms 20ms' &
-            echo 'End setting delay...'
+            # send local 'sshd_config' ssh config file to instance
+            scp $ssh_options_cloud 'scripts/cloud-deploy/monitor.sh' root@$i:/root/ &
+            echo "$i set monitor done..."
         done
         wait
+
+        for i in "${public_ip_arr[@]}"
+        do
+            # send local 'sshd_config' ssh config file to instance
+            ssh $ssh_options_cloud root@$i 'chmod u+x /root/monitor.sh && /root/monitor.sh' &
+            echo "$i set monitor done..."
+        done
 
     else 
         sleep 0.1

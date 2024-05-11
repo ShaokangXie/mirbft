@@ -191,7 +191,7 @@ func (pi *pbftInstance) lead() {
 
 	// Simulate a straggler.
 	if membership.SimulatedStraggler[membership.OwnID] == 1 && config.Config.CrashTiming == "Straggler" {
-		config.Config.BatchTimeoutMs = int(0.5 * float64(config.Config.ViewChangeTimeoutMs))
+		config.Config.BatchTimeoutMs = int(0.083333333 * float64(config.Config.ViewChangeTimeoutMs))
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond
 		logger.Info().Str("byzantine", config.Config.CrashTiming).Int("batchTimeout", config.Config.BatchTimeoutMs).Msg("byzantine effect !")
 		// we set the batchsize to an infinate practically size, so that we always wait for the timeout
@@ -326,7 +326,6 @@ func (pi *pbftInstance) proposeSN(preprepare *pb.PbftPreprepare, sn int32) {
 }
 
 func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.ProtocolMessage) error {
-	start := time.Now()
 
 	// Convenience variables
 	sn := msg.Sn
@@ -365,12 +364,6 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 		return fmt.Errorf("instance %d does not handle sequence number %d", pi.segment.SegID(), preprepare.Sn)
 	}
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 0")
-	start = time.Now()
-
 	batch := pi.batches[pi.view][sn]
 	// Check whether the batch has been already committed (this can be the case due to state transfer)
 	if batch.committed {
@@ -383,20 +376,8 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 		return fmt.Errorf("duplicate preprepare from %d for sn %d", senderID, sn)
 	}
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 1")
-	start = time.Now()
-
 	// Check that proposal requests are valid
 	batch.batch = request.NewBatch(preprepare.Batch)
-
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 2")
-	start = time.Now()
 
 	if batch.batch == nil {
 		logger.Error().Int32("peerId", senderID).Int32("sn", sn).Msg("Invalid requests in proposal.")
@@ -414,42 +395,18 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 	// Mark requests as preprepared
 	batch.batch.MarkInFlight()
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 3")
-	start = time.Now()
-
 	// Create new batch
 	digest := pbftDigest(preprepare)
 	batch.digest = digest
 	batch.preprepareMsg = preprepare
 	batch.preprepared = true
 
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 4")
-	start = time.Now()
-
 	pi.sendPrepare(batch)
-
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 5")
-	start = time.Now()
 
 	if !batch.prepared && isPrepared(batch) {
 		batch.prepared = true
 		pi.sendCommit(batch)
 	}
-
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 6")
-	start = time.Now()
 
 	if !batch.committed && batch.CheckCommits() {
 
@@ -463,11 +420,6 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 
 		pi.announce(batch, sn, preprepare.Batch, preprepare.Aborted, preprepare.Ts, batch.lastCommitTs)
 	}
-
-	logger.Info().
-		Int32("sn", sn).
-		Int64("costTime", time.Since(start).Milliseconds()).
-		Msg("handlepreprepare 7")
 
 	return nil
 }
