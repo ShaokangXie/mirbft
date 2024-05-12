@@ -75,7 +75,7 @@ orderers="Pbft"             # Possible values: Pbft HotStuff Raft Dummy
 checkpointers="Signing"
 
 # Parameters chosen for experiments
-durations="15"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
+durations="60"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
 bandwidths="1gbit"         # any value accepted by the tc command or "unlimited" !!! ATTENTION: Adapt MaxProposeDataRate in config accordingly !!!
 payloadSizes="500"         # [Bytes]
 fixedEpochLength=false
@@ -103,7 +103,7 @@ singleLeaderEpoch=$minEpochLength
 batchsizes="2048"           # [requests]
 batchrates="8"             # [batches/s]
 # minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
-minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
+minBatchTimeout="500"  # [ms]
 maxBatchTimeout="4000"      # [ms]
 segmentLengths="16"         # [entries]
 viewChangeTimeouts="60000"  # [ms]
@@ -122,7 +122,7 @@ function skip() {
 
 throughputsAuthPbft=$()
 # throughputsAuthPbft[4]="128 256 512 1024 2048 4096 8192 12288"
-throughputsAuthPbft[4]="4096"
+throughputsAuthPbft[4]="1024"
 throughputsAuthPbft[8]="128 256 512 1024 2048 4096"
 throughputsAuthPbft[16]="128 256 512 1024 2048 4096"
 throughputsAuthPbft[32]=""

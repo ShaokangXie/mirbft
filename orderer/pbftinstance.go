@@ -44,6 +44,8 @@ const (
 var (
 	// Store the htn msg from all instances
 	lock sync.Mutex
+	// The byzantine delay time
+	byzantineDelay = -1
 )
 
 // TODO: Consolidate the segment-internal and the global checkpoints.
@@ -224,8 +226,10 @@ func (pi *pbftInstance) lead() {
 
 	// Simulate a straggler.
 	if membership.SimulatedStraggler[int32(pi.segment.SegID())%int32(membership.NumNodes())] == 1 && (config.Config.CrashTiming == "Straggler" || config.Config.CrashTiming == "ByzantineStraggler") {
-		//if config.Config.CrashTiming == "Straggler" {
-		config.Config.BatchTimeoutMs = int(0.08333333333 * float64(config.Config.ViewChangeTimeoutMs))
+		if byzantineDelay == -1 {
+			byzantineDelay = 10 * config.Config.BatchTimeoutMs
+		}
+		config.Config.BatchTimeoutMs = byzantineDelay
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond
 		logger.Info().Str("byzantine", config.Config.CrashTiming).Int("batchTimeout", config.Config.BatchTimeoutMs).Msg("byzantine effected !")
 		// we set the batchsize to an infinate practically size, so that we always wait for the timeout
@@ -944,7 +948,7 @@ func (pi *pbftInstance) handleMissingEntry(msg *pb.MissingEntry) {
 		batch.batch = request.NewBatch(msg.Batch)
 		batch.batch.MarkInFlight()
 		batch.digest = msg.Digest
-		
+
 		fakePreprepare := &pb.PbftPreprepare{
 			Sn: msg.Sn,
 			// Ladon
@@ -954,18 +958,18 @@ func (pi *pbftInstance) handleMissingEntry(msg *pb.MissingEntry) {
 			// In general, the view must be set by the serial processing thread.
 			// Setting it here results in a race condition and maybe even incorrect in a corner case.
 			// Currently, however, batches are only proposed for view 0.
-			View:   pi.view,
+			View: pi.view,
 			// TODO: Leader here may have problem when some nodes crash (numnodes changes)
-			Leader: msg.Sn % int32(membership.NumNodes()),
-			Batch:  msg.Batch,
-			Ts: pi.startTs,
+			Leader:  msg.Sn % int32(membership.NumNodes()),
+			Batch:   msg.Batch,
+			Ts:      pi.startTs,
 			Aborted: false,
 		}
 		batch.preprepareMsg = fakePreprepare
 		batch.lastCommitTs = time.Now().UnixNano()
 
-		// Ladon: Add fake preprepare msg, batch.preprepareMsg.leader set! 
-		
+		// Ladon: Add fake preprepare msg, batch.preprepareMsg.leader set!
+
 		// We must not touch the preprepared or prepared flag to prevent potential segfaults,
 		// as the prepare messages and the preprepare message might still be absent.
 
