@@ -53,8 +53,10 @@ type configuration struct {
 	Checkpointer      string `yaml:"Checkpointer"`
 	Failures          int    `yaml:"Failures"`
 	StragglerCnt      int    `yaml:"StragglerCnt"`
+	PrivKeyCnt        int    `yaml:"PrivKeyCnt"`
 	FixBatchRate      bool   `yaml:"FixBatchRate"`
 	NetworkInterface  string `yaml:"NetworkInterface"`
+	UseSig            bool   `yaml:"UseSig"`
 	CrashTiming       string `yaml:"CrashTiming"`
 	RandomSeed        int64  `yaml:"RandomSeed"`
 	NodeToLeaderRatio int    `yaml:"NodeToLeaderRatio"`
@@ -144,6 +146,8 @@ func LoadFile(configFileName string) {
 	logger.Debug().Str("Manager", Config.Manager).Msg("Config")
 	logger.Debug().Int("Failures", Config.Failures).Msg("Config")
 	logger.Debug().Int("StragglerCnt", Config.StragglerCnt).Msg("Config")
+	logger.Debug().Int("PrivKeyCnt", Config.PrivKeyCnt).Msg("Config")
+	logger.Debug().Bool("UseSig", Config.UseSig).Msg("Config")
 	logger.Debug().Bool("FixBatchRate", Config.FixBatchRate).Msg("Config")
 	logger.Debug().Str("NetworkInterface", Config.NetworkInterface).Msg("Config")
 	logger.Debug().Str("CrashTiming", Config.CrashTiming).Msg("Config")

@@ -60,15 +60,15 @@ WHERE
 -- export cpu-total.val
 SELECT avg(total)
 from cpuusage_truncated
-WHERE event = 'CPU_USAGE'
+WHERE event = 'CPU_BANDWIDTH_USAGE'
 -- (totalcpu[%])
 
 -- System CPU usage (average over all peers), truncated data
 -- (This is the CPU usage reported under "System" in /proc/stat)
--- export cpu-system.val
+-- export bandwidth-total.val
 SELECT avg(system)
 from cpuusage_truncated
-WHERE event = 'CPU_USAGE'
+WHERE event = 'CPU_BANDWIDTH_USAGE'
 -- (systemcpu[%])
 
 -- End-to-end average request latency, all requests

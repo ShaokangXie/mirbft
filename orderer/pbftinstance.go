@@ -63,6 +63,7 @@ type pbftInstance struct {
 	//	next              int // The index  of the next to be proposed SN
 	startTs        int64 // Timestamp of the start of the instance. Used for estimating duration of segment.
 	readyToPropose chan struct{}
+	byzantineDelay int
 }
 
 type pbftBatch struct {
@@ -182,6 +183,8 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.startTs = time.Now().UnixNano()
 
 	pi.readyToPropose = make(chan struct{})
+
+	pi.byzantineDelay = -1
 }
 
 func (pi *pbftInstance) lead() {
@@ -191,7 +194,10 @@ func (pi *pbftInstance) lead() {
 
 	// Simulate a straggler.
 	if membership.SimulatedStraggler[membership.OwnID] == 1 && config.Config.CrashTiming == "Straggler" {
-		config.Config.BatchTimeoutMs = int(0.083333333 * float64(config.Config.ViewChangeTimeoutMs))
+		if pi.byzantineDelay == -1 {
+			pi.byzantineDelay = 10 * config.Config.BatchTimeoutMs
+		}
+		config.Config.BatchTimeoutMs = pi.byzantineDelay
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond
 		logger.Info().Str("byzantine", config.Config.CrashTiming).Int("batchTimeout", config.Config.BatchTimeoutMs).Msg("byzantine effect !")
 		// we set the batchsize to an infinate practically size, so that we always wait for the timeout
@@ -229,11 +235,11 @@ func (pi *pbftInstance) lead() {
 			},
 		}
 
-		if sn != pi.segment.FirstSN() {
-			logger.Debug().Int32("lastsn", sn-int32(membership.NumNodes())).Msg("Start waiting last sn committed!")
-			<-pi.readyToPropose
-			logger.Debug().Int32("sn", sn).Msg("Finish waiting to propose sn!")
-		}
+		// if sn != pi.segment.FirstSN() {
+		// 	logger.Debug().Int32("lastsn", sn-int32(membership.NumNodes())).Msg("Start waiting last sn committed!")
+		// 	<-pi.readyToPropose
+		// 	logger.Debug().Int32("sn", sn).Msg("Finish waiting to propose sn!")
+		// }
 		pi.serializer.serialize(msg)
 
 		// Wait until the batch is actually cut. Otherwise this goroutine would just loop quickly through
@@ -631,6 +637,16 @@ func (pi *pbftInstance) handleMissingEntry(msg *pb.MissingEntry) {
 		batch.digest = msg.Digest
 		// We must not touch the preprepared or prepared flag to prevent potential segfaults,
 		// as the prepare messages and the preprepare message might still be absent.
+		// fakepreprepare := &pb.PbftPreprepare{
+		// 	Sn: msg.Sn,
+		// 	// In general, the view must be set by the serial processing thread.
+		// 	// Setting it here results in a race condition and maybe even incorrect in a corner case.
+		// 	// Currently, however, batches are only proposed for view 0.
+		// 	View:   0,
+		// 	Leader: msg.Sn % int32(membership.NumNodes()),
+		// 	Batch:  nil, // This will be filled in by the PBFT instance when this message is serialized.
+		// }
+		// batch.preprepareMsg = fakepreprepare
 
 		pi.announce(batch, msg.Sn, msg.Batch, msg.Aborted, pi.startTs, time.Now().UnixNano())
 	}
@@ -648,12 +664,12 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 	// Mark batch as committed.
 	batch.committed = true
 
-	if batch.preprepareMsg.Leader == membership.OwnID {
-		go func() {
-			logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
-			pi.readyToPropose <- struct{}{}
-		}()
-	}
+	// if batch.preprepareMsg.Leader == membership.OwnID {
+	// 	go func() {
+	// 		logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
+	// 		pi.readyToPropose <- struct{}{}
+	// 	}()
+	// }
 
 	// Remove batch requests
 	request.RemoveBatch(batch.batch)

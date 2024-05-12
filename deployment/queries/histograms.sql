@@ -58,45 +58,45 @@ WHERE
 
 -- Total CPU usage in time (peer 0)
 -- export timeline-cpu-usage-total-peer-0.csv
-SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_USAGE' AND nodeId = 0))/1000 as msec, total
+SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 0))/1000 as msec, total
 from cpuusage
-WHERE event = 'CPU_USAGE' AND nodeId = 0
+WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 0
 -- (msec, totalcpu[%])
 
 -- Total CPU usage in time (peer 1)
 -- export timeline-cpu-usage-total-peer-1.csv
-SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_USAGE' AND nodeId = 1))/1000 as msec, total
+SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 1))/1000 as msec, total
 from cpuusage
-WHERE event = 'CPU_USAGE' AND nodeId = 1
+WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 1
 -- (msec, totalcpu[%])
 
 -- Total CPU usage in time (average over all peers)
 -- export timeline-cpu-usage-total.csv
-SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_USAGE'))/1000 as msec, avg(total)
+SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_BANDWIDTH_USAGE'))/1000 as msec, avg(total)
 from cpuusage
-WHERE event = 'CPU_USAGE'
+WHERE event = 'CPU_BANDWIDTH_USAGE'
 GROUP BY msec
 -- (msec, totalcpu[%])
 
 -- System CPU usage in time (peer 0). This is the CPU usage reported under "System" in /proc/stat
 -- export timeline-cpu-usage-system-peer-0.csv
-SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_USAGE' AND nodeId = 0))/1000 as msec, system
+SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 0))/1000 as msec, system
 from cpuusage
-WHERE event = 'CPU_USAGE' AND nodeId = 0
+WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 0
 -- (msec, systemcpu[%])
 
 -- System CPU usage in time (peer 1). This is the CPU usage reported under "System" in /proc/stat
 -- export timeline-cpu-usage-system-peer-1.csv
-SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_USAGE' AND nodeId = 1))/1000 as msec, system
+SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 1))/1000 as msec, system
 from cpuusage
-WHERE event = 'CPU_USAGE' AND nodeId = 1
+WHERE event = 'CPU_BANDWIDTH_USAGE' AND nodeId = 1
 -- (msec, systemcpu[%])
 
 -- System CPU usage in time (average over all peers). This is the CPU usage reported under "System" in /proc/stat
 -- export timeline-cpu-usage-system.csv
-SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_USAGE'))/1000 as msec, avg(system)
+SELECT (ts - (SELECT min(ts) FROM cpuusage WHERE event = 'CPU_BANDWIDTH_USAGE'))/1000 as msec, avg(system)
 from cpuusage
-WHERE event = 'CPU_USAGE'
+WHERE event = 'CPU_BANDWIDTH_USAGE'
 GROUP BY msec
 -- (msec, systemcpu[%])
 

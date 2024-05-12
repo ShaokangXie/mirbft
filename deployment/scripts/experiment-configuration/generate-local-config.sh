@@ -42,13 +42,12 @@ clients16=""    # deploys 16 client machine which run the specified number of cl
 clients32=""    # deploys 32 client machine which run the specified number of client instances
 systemSizes="4" # Must be sorted in ascending order!
 failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
+fixBatchRate=true
 networkInterface="lo"
 
-
-StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')
-privKeyNumEachPeer=(5) # Using as buffer for lagged instance
+StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+privKeyNumEachPeer=(10) # Using as buffer for lagged instance
 UseSig=(false)
-fixBatchRate=true
 
 
 reuseFaulty=true  # If true, both correct and faulty peers will have the same tag and will be launched together, with the same config file.
@@ -57,7 +56,7 @@ reuseFaulty=true  # If true, both correct and faulty peers will have the same ta
                   # the RandomSeed field).
 
 # Low-level system parameters
-loggingLevel="debug"
+loggingLevel="info"
 peerTag="peers"
 faultyPeerTag="faultyPeers"
 minConcurrentRequests=$((256 * 16384)) # Based on empirical data. At saturation, makes the throughput-latency plot nicely go up (as it is equivalent to may concurrent clients).
@@ -75,14 +74,14 @@ orderers="Pbft"             # Possible values: Pbft HotStuff Raft Dummy
 checkpointers="Signing"
 
 # Parameters chosen for experiments
-durations="15"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
+durations="60"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
 bandwidths="1gbit"         # any value accepted by the tc command or "unlimited" !!! ATTENTION: Adapt MaxProposeDataRate in config accordingly !!!
 payloadSizes="500"         # [Bytes]
 fixedEpochLength=false
 auths="true"
 bucketsPerLeader="16"
 minBuckets="16"
-minEpochLength="256"       # [entries]
+minEpochLength=$(($systemSizes * 32))       # [entries]
 nodeConnections="1"
 minConnections="16"
 leaderPolicies="Simple"  # Possible values:
@@ -91,7 +90,7 @@ leaderPolicies="Simple"  # Possible values:
                          #     "Blacklist": faulty nodes are blacklisted, at least 2f+1 nodes in the leaderset
                          #     "Backoff": faulty nodes are temporarily blacklisted and their penalty exponentially increases if after reinclusion to the leaderset they are faulty again.
 leaderPolicyWithFaults="SimulatedRandomFailures"
-crashTimings="ByzantineStraggler" # Possible values:
+crashTimings="Straggler" # Possible values:
                           #     "EpochStart": The faulty nodes stop participating at the protocol at the beginning of the first epoch
                           #     "EpochEnd": The faulty nodes stop participating at the protocol before proposing their last batch
                           #     "Straggler": The faulty nodes, if in the leaderset, delay proposing their batches for 0.5*viewChangeTimeouts. Works only with Pbft orderer.
@@ -100,12 +99,12 @@ crashTimings="ByzantineStraggler" # Possible values:
 singleLeaderEpoch=$minEpochLength
 
 # Parameters to tune:
-batchsizes="2048"           # [requests]
-batchrates="8"             # [batches/s]
+batchsizes="4096"           # [requests]
+batchrates="32"             # [batches/s]
 # minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
-minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
-maxBatchTimeout="4000"      # [ms]
-segmentLengths="16"         # [entries]
+minBatchTimeout="250"       # [ms]
+maxBatchTimeout="16000"     # [ms]
+segmentLengths="32"         # [entries]
 viewChangeTimeouts="60000"  # [ms]
 nodeToLeaderRatios="1"      # How many nodes are initally leaders, set to 1 to have initially all nodes in the leaderset
 
@@ -121,10 +120,10 @@ function skip() {
 }
 
 throughputsAuthPbft=$()
-# throughputsAuthPbft[4]="128 256 512 1024 2048 4096 8192 12288"
-throughputsAuthPbft[4]="4096"
-throughputsAuthPbft[8]="128 256 512 1024 2048 4096"
-throughputsAuthPbft[16]="128 256 512 1024 2048 4096"
+# throughputsAuthPbft[4]="105000 110000 115000 120000"
+throughputsAuthPbft[4]="1024 2048 4096"
+throughputsAuthPbft[8]=""
+throughputsAuthPbft[16]=""
 throughputsAuthPbft[32]=""
 throughputsAuthPbft[64]=""
 throughputsAuthPbft[128]=""
@@ -151,14 +150,14 @@ throughputsNoAuthSinglePbft[64]=""
 throughputsNoAuthSinglePbft[128]=""
 
 throughputsAuthHotStuff=$()
-throughputsAuthHotStuff[4]="1024 2048"
+throughputsAuthHotStuff[4]="128"
 throughputsAuthHotStuff[8]=""
 throughputsAuthHotStuff[16]=""
 throughputsAuthHotStuff[32]=""
 throughputsAuthHotStuff[64]=""
 throughputsAuthHotStuff[128]=""
 throughputsNoAuthHotStuff=$()
-throughputsNoAuthHotStuff[4]="1024 2048"
+throughputsNoAuthHotStuff[4]="128"
 throughputsNoAuthHotStuff[8]=""
 throughputsNoAuthHotStuff[16]=""
 throughputsNoAuthHotStuff[32]=""
