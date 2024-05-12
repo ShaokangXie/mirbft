@@ -33,7 +33,7 @@ buckets: 2                            # buckets per leader
 useTLS: true
 
 servers:
-  caCertFile: "/opt/gopath/src/github.com/IBM/mirbft/sampleconfig/certs/ecdsa/ca.pem"
+  caCertFile: "/opt/gopath/src/github.com/hyperledger-labs/mirbft/sampleconfig/certs/ecdsa/ca.pem"
   addresses:
     - "127.0.0.1:8003"
     - "127.0.0.1:8014"

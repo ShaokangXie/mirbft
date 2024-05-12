@@ -21,7 +21,7 @@ import (
 	"encoding/base64"
 	"sync"
 
-	pb "github.com/IBM/mirbft/protos"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 	"github.com/golang/protobuf/proto"
 )
 

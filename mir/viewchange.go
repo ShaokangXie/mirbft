@@ -19,8 +19,8 @@ package mir
 import (
 	"time"
 
-	"github.com/IBM/mirbft/config"
-	pb "github.com/IBM/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/config"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 func (s *SBFT) sendViewChange() {

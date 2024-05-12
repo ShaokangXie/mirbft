@@ -17,7 +17,7 @@ limitations under the License.
 package protos
 
 import (
-	"github.com/IBM/mirbft/crypto"
+	"github.com/hyperledger-labs/mirbft/crypto"
 	"github.com/golang/protobuf/proto"
 )
 

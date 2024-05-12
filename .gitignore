@@ -3,3 +3,4 @@
 *.out
 *.trc
 *.pb.go
+*.log

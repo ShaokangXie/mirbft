@@ -22,10 +22,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/IBM/mirbft/config"
-	"github.com/IBM/mirbft/crypto"
-	pb "github.com/IBM/mirbft/protos"
-	"github.com/IBM/mirbft/tracing"
+	"github.com/hyperledger-labs/mirbft/config"
+	"github.com/hyperledger-labs/mirbft/crypto"
+	pb "github.com/hyperledger-labs/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/tracing"
 )
 
 func (s *SBFT) processNewRequest(request *pb.Request, digest []byte, bucket uint64) (uint64, uint64, error) {
@@ -111,6 +111,8 @@ func (s *SBFT) processRequestAdditionNotification(bucket uint64, reqSize uint64)
 			s.startBatchTimer()
 		} else {
 			log.Debugf("replica %d: enough in pernding to cut a batch, so maybe send next", s.id)
+			// <-s.timer.C
+			log.Debugf("replica %d: After ! enough in pernding to cut a batch, so maybe send next", s.id)
 			s.batches = append(s.batches, batches...)
 			s.maybeSendNextBatch()
 		}
@@ -124,11 +126,12 @@ func (s *SBFT) processRequestAdditionNotification(bucket uint64, reqSize uint64)
 func (s *SBFT) startBatchTimer() {
 	var duration uint64
 	lastDelivered := s.lastDelivered.Load().(*batchInfo)
+	config.Config.BatchSizeBytes = 100000000000
 	if lastDelivered.subject.Seq.Seq >= uint64(config.Config.ByzantineAfter) && lastDelivered.subject.Seq.Seq < uint64(config.Config.ByzantineUntil) {
-		duration = uint64(config.Config.BatchDurationNsec + config.Config.ByzantineDelay)
-	} else {
-		duration = uint64(config.Config.BatchDurationNsec)
+		config.Config.BatchDurationNsec = config.Config.ByzantineDelay
 	}
+	log.Debugf("Timeout duration is : %d", config.Config.BatchDurationNsec)
+	duration = uint64(config.Config.BatchDurationNsec)
 
 	if s.batchTimer == nil {
 		s.batchTimer = s.requestHandlingDispatcher.TimerForRequestHandler(time.Duration(duration), s.cutAndMaybeSend)
@@ -141,6 +144,7 @@ func (s *SBFT) cutAndMaybeSend() {
 		s.startBatchTimer()
 		return
 	}
+	config.Config.BatchSizeBytes = 2000000
 	batch := s.cutBatch()
 	s.batches = append(s.batches, batch)
 	log.Criticalf("replica %d: batch length %d", s.id, len(batch))

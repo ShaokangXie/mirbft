@@ -19,7 +19,7 @@ package mir
 import (
 	"math/big"
 
-	"github.com/IBM/mirbft/config"
+	"github.com/hyperledger-labs/mirbft/config"
 )
 
 func (s *SBFT) getsPayload(id uint64, digest []byte) bool {

@@ -18,8 +18,8 @@ package mir
 
 import (
 	"github.com/golang/protobuf/proto"
-	"github.com/IBM/mirbft/config"
-	pb "github.com/IBM/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/config"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 func (instance *BFTInstance) maybeSendCommit() {
@@ -87,7 +87,7 @@ func (instance *BFTInstance) handleCommit(c *pb.Commit, src uint64) {
 	}
 	batch.committed = true
 	log.Noticef("replica %d: executing %v %x", instance.sbft.id, batch.subject.Seq, batch.subject.Digest)
-	log.Infof("COMMITTED %d with %d requests", batch.subject.Seq.Seq, len(batch.preprep.Batch.Payloads))
+	log.Criticalf("COMMITTED %d with %d requests", batch.subject.Seq.Seq, len(batch.preprep.Batch.Payloads))
 
 	// Send nil to the instance's message channel to allow it to shut down
 	// (The instance's goroutine is probably blocked waiting for a message on this channel.)

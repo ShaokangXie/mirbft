@@ -5,7 +5,7 @@ pkill server
 pkill client
 
 echo "Chancing working directory"
-cd /opt/gopath/src/github.com/IBM/mirbft/client
+cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/client
 
 echo "Removing previously created status files"
 rm -rf status

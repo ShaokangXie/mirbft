@@ -21,10 +21,10 @@ Download and run the script `setup.sh` which can be found in the deployment dire
 The script installs Golang 17.2 and all other dependencies.
 
 Then it clones this repository under the path: <br />
-`/opt/gopath/src/github.com/IBM/mirbft`
+`/opt/gopath/src/github.com/hyperledger-labs/mirbft`
 
 It checks out the `research` branch and, finally, builds the `client` and `server` executables under
-`/opt/gopath/src/github.com/IBM/mirbftsever` and `/opt/gopath/src/github.com/IBM/mirbft/client`
+`/opt/gopath/src/github.com/hyperledger-labs/mirbftsever` and `/opt/gopath/src/github.com/hyperledger-labs/mirbft/client`
 respectively.
 
 **NOTE**: The script installs `Go` in the home directory, sets GOPATH to `/opt/gopath/bin/` and edits `~/.bashrc`.
@@ -40,7 +40,7 @@ To start locally a setup with 4 server and 1 client:
 
 On each server:
 
-`cd /opt/gopath/src/github.com/IBM/mirbft/server`
+`cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/server`
 
 `./server ../sampleconfig/serverconfig/config$id.yml server$id 2>&1 | tee server-$id.out`
 where `$id` is `1 2 3 4` for each of the 4 server.
@@ -51,7 +51,7 @@ The command writes the logs of the server to a `server-$id.out` file.
 
 On the client:
 
-`cd /opt/gopath/src/github.com/IBM/mirbft/client`
+`cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/client`
 
 `./client ../sampleconfig/clientconfig/4peer-config.yml client`
 
@@ -62,7 +62,7 @@ Again, the first argument is the path to the server configuration and the second
 
 On the server:
 
-`cd /opt/gopath/src/github.com/IBM/mirbft/server`
+`cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/server`
 
 `./server ../sampleconfig/serverconfig/config.yml server 2>&1 | tee server.out`
 
@@ -71,7 +71,7 @@ The command writes the logs of the server to a `server.out` file.
 
 On the client:
 
-`cd /opt/gopath/src/github.com/IBM/mirbft/client`
+`cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/client`
 
 `./client ../sampleconfig/clientconfig/1peer-config.yml client`
 
@@ -79,7 +79,7 @@ On the client:
 
 ### Running with a custom configuration
 
-Change working directory to `/opt/gopath/src/github.com/IBM/mirbft/deployment`
+Change working directory to `/opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment`
 
 Edit `config-file-templates/server-config.yml` and  `config-file-templates/client-config.yml` for server, client configuration respectively (see details below).
  
@@ -94,7 +94,7 @@ Run `config-gen.sh` to generate certificates and configuration files:
 
 On each server:
 
-`cd /opt/gopath/src/github.com/IBM/mirbft/server`
+`cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/server`
 
 `./server ../deployment/config/serverconfig/config_server$id.yml server$id 2>&1 | tee server-$id.out` where `$id` is `1..N`.
 
@@ -102,13 +102,13 @@ The command writes the logs of the server to a `server-$id.out` file.
 
 On each client:
 
-`cd /opt/gopath/src/github.com/IBM/mirbft/client`
+`cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/client`
 
 `./client ../deployment/config/clientconfig/config_client$id.yml client$id` where `$id` is `1..C`.
 
 
 ## Remote Deployment
-Change working directory to `/opt/gopath/src/github.com/IBM/mirbft/deployment`
+Change working directory to `/opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment`
 
 Add information for your cloud setup `cloud-instance.info` file.
  
@@ -160,7 +160,7 @@ Each server (node) has:
  * a certificate: `server.pem`
  * 2 listening ports: `server-to-server-port`, `server-to-client-port` such that `server-to-client-port`=`server-to-server-port+2`
  
- Comments in `/opt/gopath/src/github.com/IBM/mirbft/sampleconfig/serverconfig/config*.yml` files describe how to configure a server.
+ Comments in `/opt/gopath/src/github.com/hyperledger-labs/mirbft/sampleconfig/serverconfig/config*.yml` files describe how to configure a server.
  
  Please bare in mind:
  
@@ -199,7 +199,7 @@ To emulate parallel PBFT instances we need to disable the bucket redistribution.
  For evaluating the impact of duplicate requests, see the "Performance Evaluation" section below.
 
 ### Client configuration
- Comments in `/opt/gopath/src/github.com/IBM/mirbft/sampleconfig/clientconfig/*peer-config.yml` files describe how to configure a client.
+ Comments in `/opt/gopath/src/github.com/hyperledger-labs/mirbft/sampleconfig/clientconfig/*peer-config.yml` files describe how to configure a client.
 
  In `servers` section:
  * `addresses`:
@@ -232,7 +232,7 @@ Each machine (server, client):
 
 The following steps need to be followed for each experiment run:
 
-1. Add the servers and clients of the experiment  in `/opt/gopath/src/github.com/IBM/mirbft/deployment/cloud-instance.info`.
+1. Add the servers and clients of the experiment  in `/opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment/cloud-instance.info`.
     * If the experiment is run locally, skip this step.
 2. Edit the experiment specific parameters in configuration template files under `deployment/config-file-templates`
 3. Run `config-gen.sh` to generate TLS certificates and configuration files for servers and clients.
@@ -262,9 +262,9 @@ Configure the servers with the parameters in `Byzantine behavior` section of the
 In `Byzantine behavior` section, set `byzantineDuplication` to true.
 
 ### Performance Evaluation Tool
-Performance evaluation metrics *throughput* and *latency* can be calculated with the `/opt/gopath/src/github.com/IBM/mirbft/tools/perf-eval.py` with the logs generated by the `/opt/gopath/src/github.com/IBM/mirbft/server/server` and traces generated by the `/opt/gopath/src/github.com/IBM/mirbft/client/client` binaries.
+Performance evaluation metrics *throughput* and *latency* can be calculated with the `/opt/gopath/src/github.com/hyperledger-labs/mirbft/tools/perf-eval.py` with the logs generated by the `/opt/gopath/src/github.com/hyperledger-labs/mirbft/server/server` and traces generated by the `/opt/gopath/src/github.com/hyperledger-labs/mirbft/client/client` binaries.
 
-With /opt/gopath/src/github.com/IBM/mirbft as working directory, the script should be called as follows:
+With /opt/gopath/src/github.com/hyperledger-labs/mirbft as working directory, the script should be called as follows:
 `python2 tools/perf-eval.py n m [path/to/server-1.out ... path/to/server-m.out] [path/to/client-001.trc ... path/to/client-m.trc] x y`
 * `n`: the number of server log file
 * `m`: the number of client trace files

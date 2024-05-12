@@ -21,26 +21,42 @@ fi
 if [ "$copy_only" = "false" ]; then
     for p in $clients; do
         pub=$(getIP $p)
-        scp $ssh_options run-client.sh $ssh_user@$pub:
-        ssh $ssh_user@$pub $ssh_options "source run-client.sh"
+        scp $ssh_options run-client.sh $ssh_user@$pub: &
     done
+    wait
+
+    for p in $clients; do
+        pub=$(getIP $p)
+        ssh $ssh_user@$pub $ssh_options "source run-client.sh" &
+    done
+    # wait
 
     for p in $servers; do
         pub=$(getIP $p)
-        scp $ssh_options run-server.sh $ssh_user@$pub:
-        scp $ssh_options stop.sh $ssh_user@$pub:
+        scp $ssh_options run-server.sh $ssh_user@$pub: &
+        scp $ssh_options stop.sh $ssh_user@$pub: &
     done
+    wait
+
+    for p in $servers; do
+        pub=$(getIP $p)
+        ssh $ssh_user@$pub $ssh_options "source stop.sh  > /dev/null 2>&1 & " &
+    done
+    wait
 
     for p in $servers; do
         pub=$(getIP $p)
         ssh $ssh_user@$pub $ssh_options "source run-server.sh  > /dev/null 2>&1 & " &
     done
+    wait
+
+    echo "new status ..."
 
     ready="0"
     while [ $ready -lt $C ]; do
         for p in $clients; do
             pub=$(getIP $p)
-            scp $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/IBM/mirbft/client/STATUS.sh .
+            scp $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/hyperledger-labs/mirbft/client/STATUS.sh .
             . STATUS.sh
             echo $p $status
             if [ "$status" = "FINISHED" ]; then
@@ -51,7 +67,7 @@ if [ "$copy_only" = "false" ]; then
             ready="0"
         fi
         echo "Experiment still running"
-        sleep 5
+        sleep 1
     done
 
     rm STATUS.sh
@@ -64,28 +80,36 @@ mkdir -p experiment-output
 for p in $servers; do
     pub=$(getIP $p)
     ssh $ssh_user@$pub $ssh_options "source stop.sh" &
-    scp $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/IBM/mirbft/server/server.out experiment-output/$p.out
 done
+
+for p in $servers; do
+    pub=$(getIP $p)
+    scp $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/hyperledger-labs/mirbft/server/server.out experiment-output/$p.out &
+done
+wait
 
 echo "All servers stopped, server log files are copied in deployment/experiment-output/"
 
 for p in $clients; do
     pub=$(getIP $p)
-    if ssh $ssh_user@$pub $ssh_options stat /opt/gopath/src/github.com/IBM/mirbft/client/client.out \> /dev/null 2\>\&1; then
-        scp $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/IBM/mirbft/client/client.out experiment-output/$p.out
-    else
-        echo "Client log file does not exist. Client $p did not start."
-    fi
+    # if ssh $ssh_user@$pub $ssh_options stat /opt/gopath/src/github.com/hyperledger-labs/mirbft/client/client.out \> /dev/null 2\>\&1; then
+    scp $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/hyperledger-labs/mirbft/client/client.out experiment-output/$p.out &
+    # else
+        # echo "Client log file does not exist. Client $p did not start."
+    # fi
     clientNum="${p:7}"
     clientNum=$((clientNum-1))
     traceFileSufix=$(printf %03d $clientNum)
-    if ssh $ssh_user@$pub $ssh_options stat /opt/gopath/src/github.com/IBM/mirbft/client/client-$traceFileSufix.trc \> /dev/null 2\>\&1; then
-        scp -r $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/IBM/mirbft/client/client-$traceFileSufix.trc experiment-output
-    else
-        echo "Client trace file does not exist. Client $p did not finish gracefully."
-    fi
+    # if ssh $ssh_user@$pub $ssh_options stat /opt/gopath/src/github.com/hyperledger-labs/mirbft/client/client-$traceFileSufix.trc \> /dev/null 2\>\&1; then
+    scp -r $ssh_options $ssh_user@$pub:/opt/gopath/src/github.com/hyperledger-labs/mirbft/client/client-$traceFileSufix.trc experiment-output &
+    # else
+        # echo "Client trace file does not exist. Client $p did not finish gracefully."
+    # fi
 done
+wait
 
 echo "All clients stopped, client trace and log files are copied in deployment/experiment-output/"
 
-python2 /opt/gopath/src/github.com/IBM/mirbft/tools/perf-eval.py $S $C /opt/gopath/src/github.com/IBM/mirbft/deployment/experiment-output/server*.out /opt/gopath/src/github.com/IBM/mirbft/deployment/experiment-output/client*.trc
+python /opt/gopath/src/github.com/hyperledger-labs/mirbft/tools/perf-eval.py $S $C /opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment/experiment-output/server*.out /opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment/experiment-output/client*.trc
+# python /opt/gopath/src/github.com/hyperledger-labs/mirbft/tools/perf-eval.py 16 8 /opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment/cloud-deploy/experiment-output16peer-1straggler-delay4s/server*.out /opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment/cloud-deploy/experiment-output16peer-1straggler-delay4s/client*.trc
+echo "python /opt/gopath/src/github.com/hyperledger-labs/mirbft/tools/perf-eval.py $S $C /opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment/experiment-output/server*.out /opt/gopath/src/github.com/hyperledger-labs/mirbft/deployment/experiment-output/client*.trc"

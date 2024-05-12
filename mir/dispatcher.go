@@ -18,11 +18,12 @@ package mir
 
 import (
 	"fmt"
+	"reflect"
 	"runtime"
 	"sync/atomic"
 	"time"
 
-	pb "github.com/IBM/mirbft/protos"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 const adapterQueueSize uint64 = 6500000
@@ -103,7 +104,7 @@ func (b *Dispatcher) isInstanceHandler() bool {
 	return true
 }
 
-//tests if it is a common case protocol message and if yes, returns its sequence number
+// tests if it is a common case protocol message and if yes, returns its sequence number
 func (b *Dispatcher) getMsgSeq(m *pb.Msg) (uint64, error) {
 	if pp := m.GetPreprepare(); pp != nil {
 		return pp.GetSeq().Seq, nil
@@ -163,6 +164,7 @@ func (b *Dispatcher) RunRequestProcessor() {
 	for {
 		select {
 		case to := <-s.batchTimeoutQueue:
+			log.Debugf("0 reflect.TypeOf(b.managerQueue) is %s", reflect.TypeOf(to))
 			to.Execute(b)
 		default:
 		}
@@ -189,6 +191,9 @@ func (b *Dispatcher) RunRequestProcessor() {
 					log.Critical("Updated leader pending size")
 					s.lastLeaderPendingSizeRecomputation = s.nextProposalInfo.lastConfigChange
 				}
+				// time.Sleep(s.timer.Sub(time.Now()))
+				// s.timer = time.Now().Add(time.Duration(config.Config.BatchDurationNsec + config.Config.ByzantineDelay))
+				// log.Debugf("Start new timer of %d : %d ns", s.nextProposalInfo.seq.Seq, config.Config.BatchDurationNsec+config.Config.ByzantineDelay)
 				s.maybeSendNextBatch()
 			default:
 			}
@@ -430,12 +435,15 @@ func (b *Dispatcher) Run() {
 	for {
 		select {
 		case p := <-b.managerQueue:
+			log.Debugf("1 reflect.TypeOf(b.managerQueue) is %s", reflect.TypeOf(p))
 			p.Execute(b)
 		default:
 			select {
 			case p := <-b.managerQueue:
+				log.Debugf("2 reflect.TypeOf(b.managerQueue) is %s", reflect.TypeOf(p))
 				p.Execute(b)
 			case e := <-b.queue:
+				log.Debugf("3 reflect.TypeOf(b.managerQueue) is %s", reflect.TypeOf(e))
 				e.Execute(b)
 			}
 		}
@@ -510,6 +518,22 @@ func (b *Dispatcher) handleRequest() {
 
 func (b *Dispatcher) Receive(m *pb.Msg, src uint64) {
 	//go func() {
+	// log.Debugf("Dispatcher Receive")
+	// seq, err := b.getMsgSeq(m)
+	// if err != nil {
+	// 	log.Errorf("Wrong message type received")
+	// }
+	// if pp := m.GetPreprepare(); pp != nil {
+	// 	if seq%uint64(config.Config.N) == 1 {
+	// 		log.Debugf("processBacklog: Receiving a preprepare msg of seq %d", seq)
+	// 		time.Sleep(b.GetSBFT().timer.Sub(time.Now()))
+	// 		b.GetSBFT().timer = time.Now().Add(time.Duration(config.Config.BatchDurationNsec + config.Config.ByzantineDelay))
+
+	// 		log.Debugf("Start new timer of %d : %d ns", seq, config.Config.BatchDurationNsec+config.Config.ByzantineDelay)
+	// 	}
+	// } else {
+	// 	log.Debugf("processBacklog: Receiving not a preprepare msg of seq %d", seq)
+	// }
 	b.queue <- &msgEvent{msg: m, src: src}
 	//}()
 }
@@ -550,6 +574,13 @@ func (b *Dispatcher) handleMessage(m *pb.Msg, src uint64) {
 
 	// If this is a preprepare message, start a new "one-shot" PBFT instance for it.
 	if pp := m.GetPreprepare(); pp != nil {
+		log.Debugf("Receiving preprepare msg of seq %d", pp.Seq.Seq)
+
+		// if seq%4 == 0 {
+		// 	time.Sleep(s.timer.Sub(time.Now()))
+		// 	s.timer = time.Now().Add(time.Duration(config.Config.BatchDurationNsec + config.Config.ByzantineDelay))
+		// 	log.Debugf("Start new timer of %d : %d ns", seq, config.Config.BatchDurationNsec+config.Config.ByzantineDelay)
+		// }
 
 		// Check if view view number matches
 		if pp.Seq.View < s.getView() {
@@ -571,6 +602,8 @@ func (b *Dispatcher) handleMessage(m *pb.Msg, src uint64) {
 		return
 		// If this is not a preprepare message, pass it on to the corresponding BFT instance
 	} else {
+		log.Debugf("Receiving not a preprepare msg of seq %d", seq)
+
 		i, ok := b.runningInstances[seq]
 		if !ok {
 			panic(fmt.Sprintf("Replica %d: trying to enqueue message for instance that is not yet running", b.sbft.id))
@@ -604,7 +637,7 @@ func (b *Dispatcher) batchCompleted(seq uint64) {
 	b.managerQueue <- &completedEvent{seq: seq}
 }
 
-//this function should be called when a checkpoint has advanced the low watermark
+// this function should be called when a checkpoint has advanced the low watermark
 func (b *Dispatcher) handleCompleted(seq uint64) {
 	for s := range b.runningInstances {
 		if s < seq {

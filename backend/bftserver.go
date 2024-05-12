@@ -23,12 +23,12 @@ import (
 	"strings"
 	"os"
 
-	"github.com/IBM/mirbft/config"
-	"github.com/IBM/mirbft/connection"
-	"github.com/IBM/mirbft/crypto"
-	"github.com/IBM/mirbft/mir"
-	"github.com/IBM/mirbft/persist"
-	"github.com/IBM/mirbft/tracing"
+	"github.com/hyperledger-labs/mirbft/config"
+	"github.com/hyperledger-labs/mirbft/connection"
+	"github.com/hyperledger-labs/mirbft/crypto"
+	"github.com/hyperledger-labs/mirbft/mir"
+	"github.com/hyperledger-labs/mirbft/persist"
+	"github.com/hyperledger-labs/mirbft/tracing"
 	"github.com/op/go-logging"
 	"time"
 )

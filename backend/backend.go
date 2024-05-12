@@ -24,12 +24,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/IBM/mirbft/connection"
-	"github.com/IBM/mirbft/crypto"
-	"github.com/IBM/mirbft/mir"
-	"github.com/IBM/mirbft/persist"
-	pb "github.com/IBM/mirbft/protos"
-	"github.com/IBM/mirbft/tracing"
+	"github.com/hyperledger-labs/mirbft/connection"
+	"github.com/hyperledger-labs/mirbft/crypto"
+	"github.com/hyperledger-labs/mirbft/mir"
+	"github.com/hyperledger-labs/mirbft/persist"
+	pb "github.com/hyperledger-labs/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/tracing"
 	"github.com/golang/protobuf/proto"
 	"google.golang.org/grpc"
 )
@@ -37,7 +37,7 @@ import (
 type Backend struct {
 	maxReqCount uint64
 
-	lock     sync.RWMutex
+	lock       sync.RWMutex
 	streamLock sync.RWMutex
 
 	batchMux sync.Mutex
@@ -61,7 +61,7 @@ type Backend struct {
 	batches   map[string][]*pb.Batch
 	ledger    map[string]map[string]*pb.Batch
 
-	wg sync.WaitGroup	// used to wait until all peer connections are established
+	wg sync.WaitGroup // used to wait until all peer connections are established
 }
 
 type clientInfo struct {
@@ -179,7 +179,7 @@ func (b *Backend) connectWorker(peer *PeerInfo, conn *connection.Manager) {
 		delay = time.After(timeout)
 
 		log.Infof("connecting to replica %d (%s)", peer.id, peer.info)
-		conn, err := conn.DialPeer(peer.info, grpc.WithBlock(), grpc.WithTimeout(timeout))
+		conn, err := conn.DialPeer(peer.info, grpc.WithBlock(), grpc.WithTimeout(timeout), grpc.WithInsecure())
 		//conn, err := b.conn.DialPeer(peer.info)
 		if err != nil {
 			log.Warningf("could not connect to replica %d (%s): %s", peer.id, peer.info, err)

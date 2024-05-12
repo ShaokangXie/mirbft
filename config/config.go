@@ -64,9 +64,9 @@ type configuration struct {
 	ByzantineUntil       int  `yaml:"byzantineUntil"`       // Adding Byzantine delay for sequence numbers lees than ByzantineUntil
 
 	// Network Configuration
-	UseTLS                 bool `yaml:"useTLS"` // Use TLS for both peer-to-peer and client-to-peer communication
-	ServerConnectionBuffer int  `yaml:"serverConnectionBuffer"`	// seconds servers need to wait for each other to connect
-	SignatureVerification  bool `yaml:"signatureVerification"` // request signature verification
+	UseTLS                 bool `yaml:"useTLS"`                 // Use TLS for both peer-to-peer and client-to-peer communication
+	ServerConnectionBuffer int  `yaml:"serverConnectionBuffer"` // seconds servers need to wait for each other to connect
+	SignatureVerification  bool `yaml:"signatureVerification"`  // request signature verification
 
 	// Requests load
 	RequestSize     int `yaml:"requestSize"`
@@ -94,6 +94,7 @@ type configuration struct {
 	}
 	Servers struct {
 		CACertFile string   `yaml:"caCertFile"`
+		CAKeyFile  string   `yaml:"caKeyFile"`
 		CertFiles  []string `yaml:"certFiles"`
 		Addresses  []string `yaml:"addresses"`
 	}
@@ -132,7 +133,7 @@ func LoadFile(configFileName string) {
 	log.Debugf("SigSharding: %t", Config.SigSharding)
 	log.Debugf("ByzantineDuplication: %t", Config.ByzantineDuplication)
 	log.Debugf("Censoring: %d", Config.Censoring)
-	log.Debugf("ByzantineDelay: %d", Config.Censoring)
+	log.Debugf("ByzantineDelay: %d", Config.ByzantineDelay)
 	log.Debugf("ByzantineAfter: %d", Config.ByzantineAfter)
 	log.Debugf("ByzantineUntil: %d", Config.ByzantineUntil)
 	log.Debugf("UseTLS: %t", Config.UseTLS)

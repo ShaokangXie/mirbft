@@ -19,8 +19,8 @@ package mir
 import (
 	"sync/atomic"
 
-	"github.com/IBM/mirbft/config"
-	pb "github.com/IBM/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/config"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 type BFTInstance struct {

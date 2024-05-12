@@ -19,8 +19,8 @@ package mir
 import (
 	"sync/atomic"
 
-	"github.com/IBM/mirbft/config"
-	pb "github.com/IBM/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/config"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 const msgPerSeq = 3000 // (pre)prepare, commit, checkpoint
@@ -163,7 +163,7 @@ func (adapter *Dispatcher) processBacklog() {
 	log.Debugf("replica %d: finished processing backlog", adapter.sbft.id)
 }
 
-//should only be called by manager thread
+// should only be called by manager thread
 func (s *SBFT) processAllBacklogs() {
 	for _, a := range s.blockHandlingDispatchers {
 		a.backlogRequest(true, 0)

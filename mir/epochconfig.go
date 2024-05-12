@@ -22,8 +22,8 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/IBM/mirbft/config"
-	pb "github.com/IBM/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/config"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 	"github.com/golang/protobuf/proto"
 )
 

@@ -19,7 +19,7 @@ package mir
 import (
 	"reflect"
 
-	pb "github.com/IBM/mirbft/protos"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 // makeXset returns a request subject that should be proposed as batches

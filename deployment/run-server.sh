@@ -5,7 +5,8 @@ pkill server
 pkill client
 
 echo "Chancing working directory"
-cd /opt/gopath/src/github.com/IBM/mirbft/server
+cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/server
+
 
 
 echo "Starting server"

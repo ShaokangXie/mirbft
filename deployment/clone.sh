@@ -7,17 +7,17 @@ export GOPATH=/opt/gopath
 export GOROOT=~/go
 export GO111MODULE=off
 
-sudo mkdir -p /opt/gopath/src/github.com/IBM/
+sudo mkdir -p /opt/gopath/src/github.com/hyperledger-labs/
 sudo chown -R $user:$group  /opt/gopath/
-cd /opt/gopath/src/github.com/IBM/
-if [ ! -d "/opt/gopath/src/github.com/IBM/mirbft" ]; then
-  git clone https://github.com/hyperledger-labs/mirbft.git
+cd /opt/gopath/src/github.com/hyperledger-labs/
+if [ ! -d "/opt/gopath/src/github.com/hyperledger-labs/mirbft" ]; then
+  git clone https://github.com/JeffXiesk/mirbft_cp.git
 fi
-cd /opt/gopath/src/github.com/IBM/mirbft
+cd /opt/gopath/src/github.com/hyperledger-labs/mirbft
 git checkout research
 git pull
 ./run-protoc.sh
-cd /opt/gopath/src/github.com/IBM/mirbft/server
+cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/server
 go build
-cd /opt/gopath/src/github.com/IBM/mirbft/client
+cd /opt/gopath/src/github.com/hyperledger-labs/mirbft/client
 go build

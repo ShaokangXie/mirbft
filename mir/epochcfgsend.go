@@ -16,7 +16,7 @@ limitations under the License.
 package mir
 
 import (
-	pb "github.com/IBM/mirbft/protos"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 func (s *SBFT) sendEpochCfg(config *pb.EpochConfig, src uint64) {

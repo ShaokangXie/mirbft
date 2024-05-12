@@ -21,8 +21,8 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/IBM/mirbft/backend"
-	"github.com/IBM/mirbft/config"
+	"github.com/hyperledger-labs/mirbft/backend"
+	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/op/go-logging"
 )
 

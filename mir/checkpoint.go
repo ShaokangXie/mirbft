@@ -17,8 +17,8 @@ limitations under the License.
 package mir
 
 import (
-	"github.com/IBM/mirbft/config"
-	pb "github.com/IBM/mirbft/protos"
+	"github.com/hyperledger-labs/mirbft/config"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 func (s *SBFT) makeCheckpoint() *pb.Checkpoint {

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	pb "github.com/IBM/mirbft/protos"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 func (s *SBFT) maybeSendNewEpoch() {

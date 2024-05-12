@@ -17,7 +17,7 @@ limitations under the License.
 package mir
 
 import (
-	pb "github.com/IBM/mirbft/protos"
+	pb "github.com/hyperledger-labs/mirbft/protos"
 )
 
 // Connection is an event from system to notify a new connection with

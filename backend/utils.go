@@ -19,7 +19,7 @@ package backend
 import (
 	"strings"
 
-	"github.com/IBM/mirbft/connection"
+	"github.com/hyperledger-labs/mirbft/connection"
 )
 
 const msgChanCapacity int = 5000
