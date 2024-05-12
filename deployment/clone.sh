@@ -11,7 +11,7 @@ sudo mkdir -p /opt/gopath/src/github.com/hyperledger-labs/
 sudo chown -R $user:$group  /opt/gopath/
 cd /opt/gopath/src/github.com/hyperledger-labs/
 if [ ! -d "/opt/gopath/src/github.com/hyperledger-labs/mirbft" ]; then
-  git clone https://github.com/JeffXiesk/mirbft_cp.git
+  git clone https://github.com/JeffXiesk/mirbft.git
 fi
 cd /opt/gopath/src/github.com/hyperledger-labs/mirbft
 git checkout research

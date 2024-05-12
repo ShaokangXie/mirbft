@@ -48,7 +48,7 @@ cd /opt/gopath/src/github.com/hyperledger-labs/
 if [ -d "/opt/gopath/src/github.com/hyperledger-labs/mirbft" ]; then
   rm -rf mirbft
 fi
-git clone --single-branch --branch research https://github.com/JeffXiesk/mirbft_cp.git
+git clone --single-branch --branch research https://github.com/JeffXiesk/mirbft.git
 cd /opt/gopath/src/github.com/hyperledger-labs/mirbft
 # git checkout research
 git pull origin research
