@@ -39,6 +39,10 @@ const (
 	catchupDelay = 400 * time.Millisecond
 )
 
+var (
+	byzantineDelay = -1
+)
+
 // TODO: Consolidate the segment-internal and the global checkpoints.
 
 // Represents a PBFT instance implementation.
@@ -63,7 +67,6 @@ type pbftInstance struct {
 	//	next              int // The index  of the next to be proposed SN
 	startTs        int64 // Timestamp of the start of the instance. Used for estimating duration of segment.
 	readyToPropose chan struct{}
-	byzantineDelay int
 }
 
 type pbftBatch struct {
@@ -183,8 +186,6 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.startTs = time.Now().UnixNano()
 
 	pi.readyToPropose = make(chan struct{})
-
-	pi.byzantineDelay = -1
 }
 
 func (pi *pbftInstance) lead() {
@@ -194,10 +195,10 @@ func (pi *pbftInstance) lead() {
 
 	// Simulate a straggler.
 	if membership.SimulatedStraggler[membership.OwnID] == 1 && config.Config.CrashTiming == "Straggler" {
-		if pi.byzantineDelay == -1 {
-			pi.byzantineDelay = 10 * config.Config.BatchTimeoutMs
+		if byzantineDelay == -1 {
+			byzantineDelay = 10 * config.Config.BatchTimeoutMs
 		}
-		config.Config.BatchTimeoutMs = pi.byzantineDelay
+		config.Config.BatchTimeoutMs = byzantineDelay
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond
 		logger.Info().Str("byzantine", config.Config.CrashTiming).Int("batchTimeout", config.Config.BatchTimeoutMs).Msg("byzantine effect !")
 		// we set the batchsize to an infinate practically size, so that we always wait for the timeout
