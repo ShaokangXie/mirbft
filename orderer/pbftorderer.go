@@ -19,12 +19,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	logger "github.com/rs/zerolog/log"
+	"sort"
+
 	"github.com/hyperledger-labs/mirbft/log"
 	"github.com/hyperledger-labs/mirbft/manager"
 	"github.com/hyperledger-labs/mirbft/membership"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
-	"sort"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Represents a PBFT Orderer implementation.
@@ -33,7 +34,7 @@ type PbftOrderer struct {
 	dispatcher  pbftDispatcher       // map[int32]*pbftInstance
 	backlog     backlog              // map[int32]chan*ordererMsg
 	last        int32                // Some sequence number we can ignere messages above
-	commitTime  time.Duration		 // Median commit duration
+	commitTime  time.Duration        // Median commit duration
 	lock        sync.Mutex
 }
 
@@ -161,6 +162,8 @@ func (po *PbftOrderer) Start(wg *sync.WaitGroup) {
 	//	}
 	//}()
 
+	// start := time.Now()
+
 	for s, ok := <-po.segmentChan; ok; s, ok = <-po.segmentChan {
 
 		logger.Info().
@@ -175,6 +178,9 @@ func (po *PbftOrderer) Start(wg *sync.WaitGroup) {
 
 		po.runSegment(s)
 		go po.killSegment(s)
+		// if time.Now().After(start.Add(120 * time.Second)) {
+		// break
+		// }
 	}
 }
 
@@ -262,7 +268,7 @@ func (po *PbftOrderer) setMedianCommitTime(seg manager.Segment) {
 	for _, sn := range seg.SNs() {
 		duration := log.GetEntry(sn).CommitTs - log.GetEntry(sn).ProposeTs
 		logger.Info().Int32("sn", sn).Int64("commitTs", log.GetEntry(sn).CommitTs).Int64("proposeTs", log.GetEntry(sn).ProposeTs).Int64("duration", duration).Msg("Statistics")
-		commits = append(commits, time.Duration(duration) * time.Nanosecond)
+		commits = append(commits, time.Duration(duration)*time.Nanosecond)
 	}
 	sort.Slice(commits, func(i, j int) bool { return commits[i] < commits[j] })
 	po.commitTime = commits[len(commits)/2]

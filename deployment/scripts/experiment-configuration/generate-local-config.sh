@@ -121,7 +121,7 @@ function skip() {
 
 throughputsAuthPbft=$()
 # throughputsAuthPbft[4]="105000 110000 115000 120000"
-throughputsAuthPbft[4]="1024 2048 4096"
+throughputsAuthPbft[4]="1024"
 throughputsAuthPbft[8]=""
 throughputsAuthPbft[16]=""
 throughputsAuthPbft[32]=""

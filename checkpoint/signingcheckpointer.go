@@ -273,6 +273,7 @@ func makeSignedCheckpoint(sn, last int32) (*pb.ProtocolMessage, error) {
 			Digest:    digest,
 			Signature: signature,
 		}},
+		Type: "ProtocolMessage_Checkpoint",
 	}
 	return checkpointMsg, nil
 }

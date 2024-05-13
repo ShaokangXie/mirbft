@@ -389,6 +389,7 @@ func NewBatchedConnection(pc PeerConnection, period time.Duration) *BatchedConne
 			SenderId: membership.OwnID,
 			Sn:       0,
 			Msg:      &pb.ProtocolMessage_Multi{Multi: batchMsg},
+			Type: "ProtocolMessage_Multi",
 		}
 
 		// Log message batch size.

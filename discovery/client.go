@@ -17,12 +17,13 @@ package discovery
 import (
 	"context"
 
-	logger "github.com/rs/zerolog/log"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
+	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 )
 
 func RegisterPeer(serverAddrPort string, ownPublicIP string, ownPrivateIP string) (int32, []*pb.NodeIdentity, []byte, []byte, []byte) {
+	logger.Debug().Msg("RegisterPeer started.")
 
 	// Set up a GRPC connection.
 	conn, err := grpc.Dial(serverAddrPort, grpc.WithInsecure(), grpc.WithBlock())
@@ -39,6 +40,7 @@ func RegisterPeer(serverAddrPort string, ownPublicIP string, ownPrivateIP string
 		PublicAddr:  ownPublicIP,
 		PrivateAddr: ownPrivateIP,
 	})
+	logger.Info().Str("ownPublicIP", ownPublicIP).Str("ownPrivateIP", ownPrivateIP).Msg("RegisterGlobalordererRequest content !")
 	if err != nil {
 		logger.Fatal().Msg("RegisterPeer request failed.")
 	}
@@ -66,6 +68,7 @@ func SyncPeer(serverAddrPort string, ownPeerID int32) {
 }
 
 func RegisterClient(serverAddrPort string) (int32, []*pb.NodeIdentity) {
+	logger.Debug().Msg("RegisterClient started.")
 
 	// Set up a GRPC connection.
 	conn, err := grpc.Dial(serverAddrPort, grpc.WithInsecure(), grpc.WithBlock())
@@ -85,4 +88,31 @@ func RegisterClient(serverAddrPort string) (int32, []*pb.NodeIdentity) {
 
 	// Return discovered values.
 	return response.NewClientId, response.Peers
+}
+
+func RegisterGlobalorderer(serverAddrPort string, ownPublicIP string, ownPrivateIP string) (int32, []*pb.NodeIdentity, []byte, []byte, []byte) {
+	logger.Debug().Msg("RegisterGlobalorderer started.")
+
+	// Set up a GRPC connection.
+	conn, err := grpc.Dial(serverAddrPort, grpc.WithInsecure(), grpc.WithBlock())
+	if err != nil {
+		logger.Fatal().Str("srvAddr", serverAddrPort).Msg("Couldn't connect to discovery server.")
+	}
+	defer conn.Close()
+
+	// Register client stub.
+	client := pb.NewDiscoveryClient(conn)
+
+	// Submit RegisterPeer request and obtain own ID as well as all peers' identities
+	response, err := client.RegisterGlobalorderer(context.Background(), &pb.RegisterGlobalordererRequest{
+		PublicAddr:  ownPublicIP,
+		PrivateAddr: ownPrivateIP,
+	})
+	logger.Info().Str("ownPublicIP", ownPublicIP).Str("ownPrivateIP", ownPrivateIP).Msg("RegisterGlobalordererRequest content !")
+	if err != nil {
+		logger.Fatal().Str("error", err.Error()).Msg("RegisterGlobalorderer request failed.")
+	}
+
+	// Return discovered values.
+	return response.NewPeerId, response.Peers, response.PrivKey, response.TblsPubKey, response.TblsPrivKeyShare
 }

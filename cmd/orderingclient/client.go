@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
 	"github.com/hyperledger-labs/mirbft/discovery"
@@ -19,6 +17,8 @@ import (
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/request"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 )
 
@@ -213,6 +213,8 @@ func (c *client) createRequest(seqNr int32) *pb.ClientRequest {
 		Signature: nil,
 	}
 
+	c.log.Debug().Int32("clSeqNr", req.RequestId.ClientSn).Msg("Created request.")
+
 	// Sign request message.
 	var err error = nil
 	if config.Config.SignRequests {
@@ -236,10 +238,11 @@ func (c *client) Run(wg *sync.WaitGroup) {
 	var ordererIDs []int32
 	if config.Config.LeaderPolicy == "SimulatedRandomFailures" {
 		ordererIDs = manager.NewLeaderPolicy(config.Config.LeaderPolicy).GetLeaders(0)
-	//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
-	//	ordererIDs = membership.CorrectPeers()
+		//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
+		//	ordererIDs = membership.CorrectPeers()
 	} else {
 		ordererIDs = membership.AllNodeIDs()
+		ordererIDs = append(ordererIDs, membership.GlobalOrdererNodeID())
 	}
 
 	// Create connections to ordering servers.
@@ -249,6 +252,7 @@ func (c *client) Run(wg *sync.WaitGroup) {
 	c.startBucketAssignmentReceivers()
 
 	c.log.Info().Msg("Connected to orderers.")
+	c.log.Info().Int("count", len(ordererIDs)).Msg("Non crashing node count.")
 
 	// Initialize tracing
 	// Client IDs are negative to distinguish them from peer IDs.
@@ -436,6 +440,8 @@ func (c *client) submitRequest(seqNr int32) {
 	for _, ordererID := range destIDs {
 		if c.reqSinks[ordererID] != nil {
 			c.reqSinks[ordererID] <- req
+			c.log.Debug().Int32("clSeqNr", req.RequestId.ClientSn).
+				Int32("ordererID", ordererID).Msg("Send Message to orderers.")
 		} else {
 			c.log.Warn().Int32("ordererId", ordererID).Msg("Not sending request to orderer. No connection established.")
 		}
@@ -455,6 +461,7 @@ func (c *client) startResponseHandlers() *sync.WaitGroup {
 
 	// Start one response handler for each orderer.
 	for peerID, clientStub := range c.reqClients {
+		logger.Debug().Int32("peerID", peerID).Msgf("reqClients is: %v", clientStub)
 		go c.handleResponses(clientStub, peerID, &wg)
 	}
 
@@ -503,7 +510,9 @@ func (c *client) registerResponse(clientSN int32, peerID int32) {
 		c.responses[clientSN][peerID] = true
 
 		// Mark request as finished if enough responses were received (for the first time)
-		if enoughResponses(len(c.responses[clientSN])) && !c.finished[clientSN] {
+		// Change: Only mark finished when receive globalorderer message
+		// if enoughResponses(len(c.responses[clientSN])) && !c.finished[clientSN] && peerID == membership.GlobalOrdererNodeID() {
+		if peerID == membership.GlobalOrdererNodeID() && !c.finished[clientSN] {
 			now := time.Now().UnixNano() / 1000
 			c.trace.Event(tracing.ENOUGH_RESP, int64(clientSN), now-c.sentTimestamps[clientSN])
 			c.trace.Event(tracing.REQ_FINISHED, int64(clientSN), now-c.submitTimestamps[clientSN])

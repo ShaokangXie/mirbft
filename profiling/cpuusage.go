@@ -36,7 +36,7 @@ func StartCPUTracing(trace tracing.Trace, interval time.Duration) {
 			// trace.Event(tracing.CPU_USAGE, int64(math.Round(float64(usage[0]*100))), int64(math.Round(float64(usage[1])*100)))
 			CPUUsage, bandwidthUsage := GetTotalCPUAndBandwidthUsage(config.Config.NetworkInterface, interval)
 			// bandwidthUsage := GetAverageBandwidthUsage("enp5s0", interval)
-			trace.Event(tracing.CPU_BANDWIDTH_USAGE, int64(math.Round(float64(CPUUsage))), int64(math.Round(float64(bandwidthUsage))))
+			trace.Event(tracing.CPU_USAGE, int64(math.Round(float64(CPUUsage))), int64(math.Round(float64(bandwidthUsage))))
 		}
 	}()
 }

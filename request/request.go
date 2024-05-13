@@ -175,7 +175,7 @@ func AddReqMsg(reqMsg *pb.ClientRequest) *Request {
 		Digest:   Digest(reqMsg),
 		Buffer:   getBuffer(reqMsg.RequestId.ClientId),
 		Bucket:   getBucket(reqMsg),
-		Verified: true, // signature has not yet been verified / do not need
+		Verified: false, // signature has not yet been verified
 		InFlight: false, // request has not yet been proposed (an identical one might have been, though, in which case we discard this request object)
 		Next:     nil,   // This request object is not part of a bucket list.
 		Prev:     nil,

@@ -30,8 +30,8 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 
-	logger "github.com/rs/zerolog/log"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
+	logger "github.com/rs/zerolog/log"
 )
 
 // TODO: Move relevant constants to some config file
@@ -86,6 +86,7 @@ func (ms *messengerServer) Listen(srv pb.Messenger_ListenServer) error {
 	finished := false
 	for msg, err = srv.Recv(); !finished && err == nil; msg, err = srv.Recv() {
 		checkForHotStuffProposal(msg, "Received HotStuffProposal.")
+		logger.Debug().Int32("SenderId", msg.SenderId).Int32("Sn", msg.Sn).Str("type", msg.Type).Int32("height", msg.Height).Msg("Receive msg from peer ...")
 		finished = handleMessage(msg, srv)
 	}
 
@@ -132,7 +133,10 @@ func handleMessage(msg *pb.ProtocolMessage, srv pb.Messenger_ListenServer) (fini
 		return true
 	// If the message is not a checkpoint message, it is an Orderer message.
 	default:
-		//logger.Trace().Int32("from", msg.SenderId).Msg("Received protocol message: Orderer.")
+		logger.Debug().Int32("from", msg.SenderId).Msg("Received protocol message: Orderer.")
+
+		// This is the entrance.
+
 		OrdererMsgHandler(msg)
 	}
 	return false
@@ -186,6 +190,7 @@ func Connect() {
 
 	// Get list of all peer IDs (this is a copy of the list maintained by the membership package, so we can modify it.)
 	allNodeIds := membership.AllNodeIDs()
+	allNodeIds = append(allNodeIds, membership.GlobalOrdererNodeID())
 
 	// Find index of own ID.
 	var idx int
@@ -257,6 +262,7 @@ func EnqueueMsg(msg *pb.ProtocolMessage, destNodeID int32) {
 		logger.Error().Int32("nodeID", destNodeID).Msg("Cannot enqueue message. Node not connected.")
 	} else {
 		peerConnections[destNodeID].Send(msg)
+		logger.Debug().Int32("SenderID", msg.SenderId).Int32("Sn", msg.Sn).Str("type", msg.Type).Int32("height", msg.Height).Msg("EnqueueMsg send...")
 	}
 }
 
@@ -278,6 +284,7 @@ func EnqueuePriorityMsg(msg *pb.ProtocolMessage, destNodeID int32) {
 		logger.Error().Int32("nodeID", destNodeID).Msg("Cannot enqueue message. Node not connected.")
 	} else {
 		peerConnections[destNodeID].SendPriority(msg)
+		logger.Debug().Int32("SenderID", msg.SenderId).Int32("Sn", msg.Sn).Str("type", msg.Type).Int32("height", msg.Height).Msg("EnqueuePriorityMsg send...")
 	}
 }
 
@@ -394,6 +401,7 @@ func createTestedConnections(addrString string, dialOpts []grpc.DialOption, node
 			SenderId: membership.OwnID,
 			Sn:       0,
 			Msg:      &pb.ProtocolMessage_Close{Close: &pb.CloseConnection{}},
+			Type:     "ProtocolMessage_Close",
 		})
 		if err != nil {
 			logger.Error().Err(err).Int32("peerId", nodeID).Int("bandwidth", t.Bandwidth).Msg("Failed to close slow excess connection.")
@@ -565,6 +573,7 @@ func testConnection(client pb.Messenger_ListenClient) *connectionTest {
 			Msg: &pb.ProtocolMessage_BandwidthTest{BandwidthTest: &pb.BandwidthTest{
 				Payload: make([]byte, config.Config.ConnectionTestPayload, config.Config.ConnectionTestPayload),
 			}},
+			Type: "ProtocolMessage_BandwidthTest",
 		})
 		if err != nil {
 			logger.Error().Err(err).Msg("Failed sending bandwidth test message to peer.")

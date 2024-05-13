@@ -146,6 +146,7 @@ func (c *SimpleCheckpointer) launchInstance(sn int32) {
 			Sn:     sn,
 			Digest: []byte("This is a checkpoint message"),
 		}},
+		Type: "ProtocolMessage_Checkpoint",
 	}
 
 	// Send checkpoint message to all nodes.

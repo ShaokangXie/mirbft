@@ -239,6 +239,8 @@ func (hi *hotStuffInstance) proposeSN(sn int32) {
 				Node:   new.node,
 			},
 		},
+		Type: "ProtocolMessage_Proposal",
+		Height: hi.leaf.height+1,
 	}
 
 	logger.Info().Int32("sn", sn).
@@ -445,6 +447,8 @@ func (hi *hotStuffInstance) sendVote(node *hotStuffNode) {
 				Signature: signature,
 			},
 		},
+		Type: "ProtocolMessage_Vote",
+		Height: node.height,
 	}
 
 	logger.Info().Int32("sn", hi.height2sn[node.height]).
@@ -578,6 +582,8 @@ func (hi *hotStuffInstance) sendNewView() {
 		Msg: &pb.ProtocolMessage_HotstuffNewview{
 			HotstuffNewview: newview,
 		},
+		Type: "ProtocolMessage_HotstuffNewView",
+		Height: newview.Certificate.Height,
 	}
 
 	logger.Info().
@@ -852,6 +858,8 @@ func (hi *hotStuffInstance) setViewChangeTimer(sn int32, node *hotStuffNode) {
 				Sn:   node.sn,
 				View: hi.view,
 			}},
+		Type: "ProtocolMessage_Timeout",
+		Height: node.height,
 	}
 	node.viewChangeTimer = time.AfterFunc(hi.viewChangeTimeout, func() { hi.serializer.serialize(msg) })
 }

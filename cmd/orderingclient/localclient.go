@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 )
 
 type LocalClient struct {
@@ -147,7 +147,7 @@ func (c *LocalClient) RegisterResponse(clientSN int32) {
 		if !c.finished[clientSN] {
 			c.trace.Event(tracing.REQ_FINISHED, int64(clientSN), int64(c.ownClientID))
 			c.finished[clientSN] = true
-			c.log.Debug().Int32("clSeqNr", clientSN).Msg("Request finished (out of order).")
+			c.log.Debug().Int32("clSeqNr", clientSN).Msg("Request finished (out of order). (localclient)")
 
 			// Sanity check: For a LocalClient, the else branch should never be executed,
 			// As we only ever get responses from our local peer.

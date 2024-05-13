@@ -18,10 +18,10 @@ import (
 	"math/rand"
 	"sort"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
+	logger "github.com/rs/zerolog/log"
 )
 
 var (
@@ -51,8 +51,6 @@ var (
 	nodeIDs []int32
 
 	SimulatedCrashes map[int32]*pb.NodeIdentity
-
-	SimulatedStraggler map[int32]int32
 )
 
 // Initializes the Client key (to be changed at some point).
@@ -73,7 +71,6 @@ func Init() {
 	}
 
 	SimulatedCrashes = make(map[int32]*pb.NodeIdentity)
-	SimulatedStraggler = make(map[int32]int32)
 }
 
 // Initializes the known node identities.
@@ -105,18 +102,6 @@ func InitNodeIdentities(identities []*pb.NodeIdentity) {
 	for _, p := range allNodeIDs[:config.Config.Failures] {
 		SimulatedCrashes[p] = nodeIdentities[p]
 	}
-	// rand.Seed(config.Config.RandomSeed)
-	// for i := 0; i < config.Config.StragglerCnt; i++ {
-	// 	randi := int32(rand.Intn(len(allNodeIDs)))
-	// 	for SimulatedStraggler[randi] == 1 {
-	// 		randi = int32(rand.Intn(len(allNodeIDs)))
-	// 	}
-	// 	SimulatedStraggler[randi] = 1
-	// }
-	// logger.Debug().Msgf("SimulatedStraggler is %v", SimulatedStraggler)
-	for _, p := range allNodeIDs[:config.Config.StragglerCnt] {
-		SimulatedStraggler[p] = 1
-	}
 }
 
 // Return full node identity
@@ -144,14 +129,33 @@ func CorrectPeers() []int32 {
 // (At least for now. This might change if we start experimenting with dynamic membership.)
 func AllNodeIDs() []int32 {
 	// Return a copy of the data, so the caller cannot change the ordering
-	c := make([]int32, len(nodeIDs), len(nodeIDs))
-	copy(c, nodeIDs)
+	c := make([]int32, 0, 0)
+	// logger.Debug().Msgf("nodeIDs is: %v", nodeIDs)
+	// logger.Debug().Msgf("nodeIdentities is: %v", nodeIdentities)
+	for _, nodeId := range nodeIDs {
+		if nodeIdentities[nodeId].Tag == 0 {
+			c = append(c, nodeId)
+		}
+	}
 	return c
+}
+
+// Return an ordered list of IDs of all known nodes.
+// Every node has a consistent view of this.
+// (At least for now. This might change if we start experimenting with dynamic membership.)
+func GlobalOrdererNodeID() int32 {
+	// Return a copy of the data, so the caller cannot change the ordering
+	for _, nodeId := range nodeIDs {
+		if nodeIdentities[nodeId].Tag == 1 {
+			return nodeId
+		}
+	}
+	return -1
 }
 
 // Returns the total number of nodes.
 func NumNodes() int {
-	return len(nodeIdentities)
+	return len(nodeIdentities) - 1
 }
 
 // Returns the the maximum number of faults

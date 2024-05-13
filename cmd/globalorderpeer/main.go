@@ -27,6 +27,7 @@ import (
 var profilingEnabled = false
 
 func main() {
+	logger.Debug().Msg("Globalorderer main started.")
 
 	// Get command line arguments
 	configFileName := os.Args[1]
@@ -63,7 +64,7 @@ func main() {
 	// - Public key for BLS threshold cryptosystem
 	// - Private key share for BLS threshold cryptosystem
 	ownID, nodeIdentities, privateKey, serializedTBLSPubKey, serializedTBLSPrivKeyShare :=
-		discovery.RegisterPeer(discoveryServAddr, ownPublicIP, ownPrivateIP)
+		discovery.RegisterGlobalorderer(discoveryServAddr, ownPublicIP, ownPrivateIP)
 	membership.OwnID = ownID
 	membership.OwnPrivKey = privateKey
 	membership.InitNodeIdentities(nodeIdentities)
@@ -106,7 +107,8 @@ func main() {
 
 	// Instantiate component modules (with stubs).
 	mngr = setManager(config.Config.Manager)
-	ord = setOrderer(config.Config.Orderer)
+	// ord = setOrderer(config.Config.Orderer)
+	ord = setOrderer("globalorderer")
 	chkp = setCheckpointer(config.Config.Checkpointer)
 	rsp = request.NewResponder()
 
@@ -219,18 +221,20 @@ func setManager(managerType string) (mngr manager.Manager) {
 }
 
 func setOrderer(ordererType string) (ord orderer.Orderer) {
-	switch ordererType {
-	case "Dummy":
-		ord = &orderer.DummyOrderer{}
-	case "Pbft":
-		ord = &orderer.PbftOrderer{}
-	case "HotStuff":
-		ord = &orderer.HotStuffOrderer{}
-	case "Raft":
-		ord = &orderer.RaftOrderer{}
-	default:
-		logger.Fatal().Msg("Unsupported orderer type")
-	}
+	// switch ordererType {
+	// case "Dummy":
+	// 	ord = &orderer.DummyOrderer{}
+	// case "Pbft":
+	// 	ord = &orderer.PbftOrderer{}
+	// case "HotStuff":
+	// 	ord = &orderer.HotStuffOrderer{}
+	// case "Raft":
+	// 	ord = &orderer.RaftOrderer{}
+	// default:
+	// 	logger.Fatal().Msg("Unsupported orderer type")
+	// }
+
+	ord = &orderer.GlobalOrderer{}
 	return ord
 }
 

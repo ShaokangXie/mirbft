@@ -579,6 +579,290 @@ func (x *PbftNewView) GetCheckpoint() *CheckpointMsg {
 	return nil
 }
 
+type LogEntry struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Sn        int32  `protobuf:"varint,1,opt,name=sn,proto3" json:"sn,omitempty"`
+	Batch     *Batch `protobuf:"bytes,2,opt,name=batch,proto3" json:"batch,omitempty"`
+	Digest    []byte `protobuf:"bytes,3,opt,name=digest,proto3" json:"digest,omitempty"`
+	Aborted   bool   `protobuf:"varint,4,opt,name=aborted,proto3" json:"aborted,omitempty"`
+	Suspect   int32  `protobuf:"varint,5,opt,name=suspect,proto3" json:"suspect,omitempty"`
+	ProposeTs int64  `protobuf:"varint,6,opt,name=propose_ts,json=proposeTs,proto3" json:"propose_ts,omitempty"`
+	CommitTs  int64  `protobuf:"varint,7,opt,name=commit_ts,json=commitTs,proto3" json:"commit_ts,omitempty"`
+}
+
+func (x *LogEntry) Reset() {
+	*x = LogEntry{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pbftorderer_proto_msgTypes[9]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *LogEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogEntry) ProtoMessage() {}
+
+func (x *LogEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_pbftorderer_proto_msgTypes[9]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
+func (*LogEntry) Descriptor() ([]byte, []int) {
+	return file_pbftorderer_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *LogEntry) GetSn() int32 {
+	if x != nil {
+		return x.Sn
+	}
+	return 0
+}
+
+func (x *LogEntry) GetBatch() *Batch {
+	if x != nil {
+		return x.Batch
+	}
+	return nil
+}
+
+func (x *LogEntry) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
+}
+
+func (x *LogEntry) GetAborted() bool {
+	if x != nil {
+		return x.Aborted
+	}
+	return false
+}
+
+func (x *LogEntry) GetSuspect() int32 {
+	if x != nil {
+		return x.Suspect
+	}
+	return 0
+}
+
+func (x *LogEntry) GetProposeTs() int64 {
+	if x != nil {
+		return x.ProposeTs
+	}
+	return 0
+}
+
+func (x *LogEntry) GetCommitTs() int64 {
+	if x != nil {
+		return x.CommitTs
+	}
+	return 0
+}
+
+type GlobalPreprepare struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Sn     int32  `protobuf:"varint,1,opt,name=sn,proto3" json:"sn,omitempty"`
+	Gsn    int32  `protobuf:"varint,2,opt,name=gsn,proto3" json:"gsn,omitempty"`
+	View   int32  `protobuf:"varint,3,opt,name=view,proto3" json:"view,omitempty"`
+	Digest []byte `protobuf:"bytes,4,opt,name=digest,proto3" json:"digest,omitempty"`
+}
+
+func (x *GlobalPreprepare) Reset() {
+	*x = GlobalPreprepare{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pbftorderer_proto_msgTypes[10]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GlobalPreprepare) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GlobalPreprepare) ProtoMessage() {}
+
+func (x *GlobalPreprepare) ProtoReflect() protoreflect.Message {
+	mi := &file_pbftorderer_proto_msgTypes[10]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GlobalPreprepare.ProtoReflect.Descriptor instead.
+func (*GlobalPreprepare) Descriptor() ([]byte, []int) {
+	return file_pbftorderer_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GlobalPreprepare) GetSn() int32 {
+	if x != nil {
+		return x.Sn
+	}
+	return 0
+}
+
+func (x *GlobalPreprepare) GetGsn() int32 {
+	if x != nil {
+		return x.Gsn
+	}
+	return 0
+}
+
+func (x *GlobalPreprepare) GetView() int32 {
+	if x != nil {
+		return x.View
+	}
+	return 0
+}
+
+func (x *GlobalPreprepare) GetDigest() []byte {
+	if x != nil {
+		return x.Digest
+	}
+	return nil
+}
+
+type GlobalPrepare struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Sn   int32 `protobuf:"varint,1,opt,name=sn,proto3" json:"sn,omitempty"`
+	Gsn  int32 `protobuf:"varint,2,opt,name=gsn,proto3" json:"gsn,omitempty"`
+	View int32 `protobuf:"varint,3,opt,name=view,proto3" json:"view,omitempty"`
+}
+
+func (x *GlobalPrepare) Reset() {
+	*x = GlobalPrepare{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pbftorderer_proto_msgTypes[11]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GlobalPrepare) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GlobalPrepare) ProtoMessage() {}
+
+func (x *GlobalPrepare) ProtoReflect() protoreflect.Message {
+	mi := &file_pbftorderer_proto_msgTypes[11]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GlobalPrepare.ProtoReflect.Descriptor instead.
+func (*GlobalPrepare) Descriptor() ([]byte, []int) {
+	return file_pbftorderer_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GlobalPrepare) GetSn() int32 {
+	if x != nil {
+		return x.Sn
+	}
+	return 0
+}
+
+func (x *GlobalPrepare) GetGsn() int32 {
+	if x != nil {
+		return x.Gsn
+	}
+	return 0
+}
+
+func (x *GlobalPrepare) GetView() int32 {
+	if x != nil {
+		return x.View
+	}
+	return 0
+}
+
+type GlobalCommit struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Gsn  int32 `protobuf:"varint,1,opt,name=gsn,proto3" json:"gsn,omitempty"`
+	View int32 `protobuf:"varint,2,opt,name=view,proto3" json:"view,omitempty"`
+}
+
+func (x *GlobalCommit) Reset() {
+	*x = GlobalCommit{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pbftorderer_proto_msgTypes[12]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *GlobalCommit) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GlobalCommit) ProtoMessage() {}
+
+func (x *GlobalCommit) ProtoReflect() protoreflect.Message {
+	mi := &file_pbftorderer_proto_msgTypes[12]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GlobalCommit.ProtoReflect.Descriptor instead.
+func (*GlobalCommit) Descriptor() ([]byte, []int) {
+	return file_pbftorderer_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *GlobalCommit) GetGsn() int32 {
+	if x != nil {
+		return x.Gsn
+	}
+	return 0
+}
+
+func (x *GlobalCommit) GetView() int32 {
+	if x != nil {
+		return x.View
+	}
+	return 0
+}
+
 var File_pbftorderer_proto protoreflect.FileDescriptor
 
 var file_pbftorderer_proto_rawDesc = []byte{
@@ -667,8 +951,35 @@ var file_pbftorderer_proto_rawDesc = []byte{
 	0x65, 0x79, 0x12, 0x2f, 0x0a, 0x05, 0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28,
 	0x0b, 0x32, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x73, 0x2e, 0x50, 0x62,
 	0x66, 0x74, 0x50, 0x72, 0x65, 0x70, 0x72, 0x65, 0x70, 0x61, 0x72, 0x65, 0x52, 0x05, 0x76, 0x61,
-	0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x42, 0x0e, 0x5a, 0x0c, 0x2e, 0x2f, 0x3b, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x6c, 0x75, 0x65, 0x3a, 0x02, 0x38, 0x01, 0x22, 0xca, 0x01, 0x0a, 0x08, 0x4c, 0x6f, 0x67, 0x45,
+	0x6e, 0x74, 0x72, 0x79, 0x12, 0x0e, 0x0a, 0x02, 0x73, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x05,
+	0x52, 0x02, 0x73, 0x6e, 0x12, 0x26, 0x0a, 0x05, 0x62, 0x61, 0x74, 0x63, 0x68, 0x18, 0x02, 0x20,
+	0x01, 0x28, 0x0b, 0x32, 0x10, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62, 0x75, 0x66, 0x73, 0x2e,
+	0x42, 0x61, 0x74, 0x63, 0x68, 0x52, 0x05, 0x62, 0x61, 0x74, 0x63, 0x68, 0x12, 0x16, 0x0a, 0x06,
+	0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x06, 0x64, 0x69,
+	0x67, 0x65, 0x73, 0x74, 0x12, 0x18, 0x0a, 0x07, 0x61, 0x62, 0x6f, 0x72, 0x74, 0x65, 0x64, 0x18,
+	0x04, 0x20, 0x01, 0x28, 0x08, 0x52, 0x07, 0x61, 0x62, 0x6f, 0x72, 0x74, 0x65, 0x64, 0x12, 0x18,
+	0x0a, 0x07, 0x73, 0x75, 0x73, 0x70, 0x65, 0x63, 0x74, 0x18, 0x05, 0x20, 0x01, 0x28, 0x05, 0x52,
+	0x07, 0x73, 0x75, 0x73, 0x70, 0x65, 0x63, 0x74, 0x12, 0x1d, 0x0a, 0x0a, 0x70, 0x72, 0x6f, 0x70,
+	0x6f, 0x73, 0x65, 0x5f, 0x74, 0x73, 0x18, 0x06, 0x20, 0x01, 0x28, 0x03, 0x52, 0x09, 0x70, 0x72,
+	0x6f, 0x70, 0x6f, 0x73, 0x65, 0x54, 0x73, 0x12, 0x1b, 0x0a, 0x09, 0x63, 0x6f, 0x6d, 0x6d, 0x69,
+	0x74, 0x5f, 0x74, 0x73, 0x18, 0x07, 0x20, 0x01, 0x28, 0x03, 0x52, 0x08, 0x63, 0x6f, 0x6d, 0x6d,
+	0x69, 0x74, 0x54, 0x73, 0x22, 0x60, 0x0a, 0x10, 0x47, 0x6c, 0x6f, 0x62, 0x61, 0x6c, 0x50, 0x72,
+	0x65, 0x70, 0x72, 0x65, 0x70, 0x61, 0x72, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x73, 0x6e, 0x18, 0x01,
+	0x20, 0x01, 0x28, 0x05, 0x52, 0x02, 0x73, 0x6e, 0x12, 0x10, 0x0a, 0x03, 0x67, 0x73, 0x6e, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x67, 0x73, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x76, 0x69,
+	0x65, 0x77, 0x18, 0x03, 0x20, 0x01, 0x28, 0x05, 0x52, 0x04, 0x76, 0x69, 0x65, 0x77, 0x12, 0x16,
+	0x0a, 0x06, 0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x18, 0x04, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x06,
+	0x64, 0x69, 0x67, 0x65, 0x73, 0x74, 0x22, 0x45, 0x0a, 0x0d, 0x47, 0x6c, 0x6f, 0x62, 0x61, 0x6c,
+	0x50, 0x72, 0x65, 0x70, 0x61, 0x72, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x73, 0x6e, 0x18, 0x01, 0x20,
+	0x01, 0x28, 0x05, 0x52, 0x02, 0x73, 0x6e, 0x12, 0x10, 0x0a, 0x03, 0x67, 0x73, 0x6e, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x67, 0x73, 0x6e, 0x12, 0x12, 0x0a, 0x04, 0x76, 0x69, 0x65,
+	0x77, 0x18, 0x03, 0x20, 0x01, 0x28, 0x05, 0x52, 0x04, 0x76, 0x69, 0x65, 0x77, 0x22, 0x34, 0x0a,
+	0x0c, 0x47, 0x6c, 0x6f, 0x62, 0x61, 0x6c, 0x43, 0x6f, 0x6d, 0x6d, 0x69, 0x74, 0x12, 0x10, 0x0a,
+	0x03, 0x67, 0x73, 0x6e, 0x18, 0x01, 0x20, 0x01, 0x28, 0x05, 0x52, 0x03, 0x67, 0x73, 0x6e, 0x12,
+	0x12, 0x0a, 0x04, 0x76, 0x69, 0x65, 0x77, 0x18, 0x02, 0x20, 0x01, 0x28, 0x05, 0x52, 0x04, 0x76,
+	0x69, 0x65, 0x77, 0x42, 0x0e, 0x5a, 0x0c, 0x2e, 0x2f, 0x3b, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x62,
+	0x75, 0x66, 0x73, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -683,7 +994,7 @@ func file_pbftorderer_proto_rawDescGZIP() []byte {
 	return file_pbftorderer_proto_rawDescData
 }
 
-var file_pbftorderer_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_pbftorderer_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
 var file_pbftorderer_proto_goTypes = []interface{}{
 	(*PbftPreprepare)(nil),               // 0: protobufs.PbftPreprepare
 	(*PbftPrepare)(nil),                  // 1: protobufs.PbftPrepare
@@ -694,32 +1005,37 @@ var file_pbftorderer_proto_goTypes = []interface{}{
 	(*PbftMissingPreprepareRequest)(nil), // 6: protobufs.PbftMissingPreprepareRequest
 	(*PbftMissingPreprepare)(nil),        // 7: protobufs.PbftMissingPreprepare
 	(*PbftNewView)(nil),                  // 8: protobufs.PbftNewView
-	nil,                                  // 9: protobufs.PbftViewChange.PsetEntry
-	nil,                                  // 10: protobufs.PbftViewChange.QsetEntry
-	nil,                                  // 11: protobufs.PbftNewView.VsetEntry
-	nil,                                  // 12: protobufs.PbftNewView.XsetEntry
-	(*Batch)(nil),                        // 13: protobufs.Batch
-	(*CheckpointMsg)(nil),                // 14: protobufs.CheckpointMsg
-	(*SignedMsg)(nil),                    // 15: protobufs.SignedMsg
+	(*LogEntry)(nil),                     // 9: protobufs.LogEntry
+	(*GlobalPreprepare)(nil),             // 10: protobufs.GlobalPreprepare
+	(*GlobalPrepare)(nil),                // 11: protobufs.GlobalPrepare
+	(*GlobalCommit)(nil),                 // 12: protobufs.GlobalCommit
+	nil,                                  // 13: protobufs.PbftViewChange.PsetEntry
+	nil,                                  // 14: protobufs.PbftViewChange.QsetEntry
+	nil,                                  // 15: protobufs.PbftNewView.VsetEntry
+	nil,                                  // 16: protobufs.PbftNewView.XsetEntry
+	(*Batch)(nil),                        // 17: protobufs.Batch
+	(*CheckpointMsg)(nil),                // 18: protobufs.CheckpointMsg
+	(*SignedMsg)(nil),                    // 19: protobufs.SignedMsg
 }
 var file_pbftorderer_proto_depIdxs = []int32{
-	13, // 0: protobufs.PbftPreprepare.batch:type_name -> protobufs.Batch
-	9,  // 1: protobufs.PbftViewChange.pset:type_name -> protobufs.PbftViewChange.PsetEntry
-	10, // 2: protobufs.PbftViewChange.qset:type_name -> protobufs.PbftViewChange.QsetEntry
-	14, // 3: protobufs.PbftViewChange.cset:type_name -> protobufs.CheckpointMsg
+	17, // 0: protobufs.PbftPreprepare.batch:type_name -> protobufs.Batch
+	13, // 1: protobufs.PbftViewChange.pset:type_name -> protobufs.PbftViewChange.PsetEntry
+	14, // 2: protobufs.PbftViewChange.qset:type_name -> protobufs.PbftViewChange.QsetEntry
+	18, // 3: protobufs.PbftViewChange.cset:type_name -> protobufs.CheckpointMsg
 	0,  // 4: protobufs.PbftMissingPreprepare.preprepare:type_name -> protobufs.PbftPreprepare
-	11, // 5: protobufs.PbftNewView.vset:type_name -> protobufs.PbftNewView.VsetEntry
-	12, // 6: protobufs.PbftNewView.xset:type_name -> protobufs.PbftNewView.XsetEntry
-	14, // 7: protobufs.PbftNewView.checkpoint:type_name -> protobufs.CheckpointMsg
-	1,  // 8: protobufs.PbftViewChange.PsetEntry.value:type_name -> protobufs.PbftPrepare
-	1,  // 9: protobufs.PbftViewChange.QsetEntry.value:type_name -> protobufs.PbftPrepare
-	15, // 10: protobufs.PbftNewView.VsetEntry.value:type_name -> protobufs.SignedMsg
-	0,  // 11: protobufs.PbftNewView.XsetEntry.value:type_name -> protobufs.PbftPreprepare
-	12, // [12:12] is the sub-list for method output_type
-	12, // [12:12] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	15, // 5: protobufs.PbftNewView.vset:type_name -> protobufs.PbftNewView.VsetEntry
+	16, // 6: protobufs.PbftNewView.xset:type_name -> protobufs.PbftNewView.XsetEntry
+	18, // 7: protobufs.PbftNewView.checkpoint:type_name -> protobufs.CheckpointMsg
+	17, // 8: protobufs.LogEntry.batch:type_name -> protobufs.Batch
+	1,  // 9: protobufs.PbftViewChange.PsetEntry.value:type_name -> protobufs.PbftPrepare
+	1,  // 10: protobufs.PbftViewChange.QsetEntry.value:type_name -> protobufs.PbftPrepare
+	19, // 11: protobufs.PbftNewView.VsetEntry.value:type_name -> protobufs.SignedMsg
+	0,  // 12: protobufs.PbftNewView.XsetEntry.value:type_name -> protobufs.PbftPreprepare
+	13, // [13:13] is the sub-list for method output_type
+	13, // [13:13] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_pbftorderer_proto_init() }
@@ -839,6 +1155,54 @@ func file_pbftorderer_proto_init() {
 				return nil
 			}
 		}
+		file_pbftorderer_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*LogEntry); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pbftorderer_proto_msgTypes[10].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GlobalPreprepare); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pbftorderer_proto_msgTypes[11].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GlobalPrepare); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pbftorderer_proto_msgTypes[12].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*GlobalCommit); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -846,7 +1210,7 @@ func file_pbftorderer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_pbftorderer_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   17,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

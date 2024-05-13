@@ -48,7 +48,13 @@ message ProtocolMessage {
         MissingEntry missing_entry = 26;
         PbftCatchUp pbft_catchup = 27;
         HotStuffNewView hotstuff_newview = 28;
+        LogEntry log_entry = 29;
+        GlobalPreprepare global_preprepare = 30;
+        GlobalPrepare global_prepare = 31;
+        GlobalCommit global_commit = 32;
     }
+    string type = 33;
+    int32 height = 34;
 }
 
 message ProtocolMessageBatch {
