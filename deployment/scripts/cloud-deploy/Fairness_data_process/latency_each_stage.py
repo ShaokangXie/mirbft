@@ -1,6 +1,7 @@
 import os
 import sys
 import re
+import math
 import numpy as np
 
 
@@ -318,7 +319,8 @@ if __name__=='__main__':
                         NSet.append((i,j))
             print('N: '+str(N))
             print('n: '+str(n))
-            print('C: '+str(1-2*N/(n*(n-1))))
+            # print('C: '+str(1-2*N/(n*(n-1))))
+            print('C: '+str(math.e ** -(N/n)))
 
             sn_propose2commit=[]
             sn_propose2deliver=[]
