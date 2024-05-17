@@ -40,8 +40,8 @@ faultyMachineLocations="sjc04 osa23 ams03 syd05 lon06 wdc07 che01 tok05 par01 da
 clients1="1"    # deploys 1 client machine which run the specified number of client instances
 clients16=""    # deploys 16 client machine which run the specified number of client instances
 clients32=""    # deploys 32 client machine which run the specified number of client instances
-systemSizes="4" # Must be sorted in ascending order!
-failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
+systemSizes="3" # Must be sorted in ascending order!
+failureCounts=(1) # For each system size, the corresponding failure count (on top of the correct nodes)
 networkInterface="lo"
 
 
@@ -82,7 +82,7 @@ fixedEpochLength=false
 auths="true"
 bucketsPerLeader="16"
 minBuckets="16"
-minEpochLength="256"       # [entries]
+minEpochLength="128"       # [entries]
 nodeConnections="1"
 minConnections="16"
 leaderPolicies="Simple"  # Possible values:
@@ -91,7 +91,7 @@ leaderPolicies="Simple"  # Possible values:
                          #     "Blacklist": faulty nodes are blacklisted, at least 2f+1 nodes in the leaderset
                          #     "Backoff": faulty nodes are temporarily blacklisted and their penalty exponentially increases if after reinclusion to the leaderset they are faulty again.
 leaderPolicyWithFaults="SimulatedRandomFailures"
-crashTimings="ByzantineStraggler" # Possible values:
+crashTimings="EpochStart" # Possible values:
                           #     "EpochStart": The faulty nodes stop participating at the protocol at the beginning of the first epoch
                           #     "EpochEnd": The faulty nodes stop participating at the protocol before proposing their last batch
                           #     "Straggler": The faulty nodes, if in the leaderset, delay proposing their batches for 0.5*viewChangeTimeouts. Works only with Pbft orderer.
@@ -100,7 +100,7 @@ crashTimings="ByzantineStraggler" # Possible values:
 singleLeaderEpoch=$minEpochLength
 
 # Parameters to tune:
-batchsizes="2048"           # [requests]
+batchsizes="4096"           # [requests]
 batchrates="8"             # [batches/s]
 # minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
 minBatchTimeout="500"  # [ms]
@@ -417,9 +417,9 @@ function generateCombinations() {
                                                 segmentLength=0
                                               fi
 
-                                              if [ $numFailures -gt 0 ]; then
-                                                leaderPolicy="$leaderPolicyWithFaults"
-                                              fi
+                                              # if [ $numFailures -gt 0 ]; then
+                                              #   leaderPolicy="$leaderPolicyWithFaults"
+                                              # fi
 
                                               if [ $leaderPolicy = "Single" ]; then
                                                 segmentLength=$singleLeaderEpoch

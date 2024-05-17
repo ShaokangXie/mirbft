@@ -20,11 +20,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/membership"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -49,10 +49,9 @@ var (
 func (ms *messengerServer) Request(srv pb.Messenger_RequestServer) error {
 
 	// WARNING: If a simulate crash, the peer ignores all messages
-	if Crashed {
-		return nil
-	}
-
+	// if Crashed {
+	// 	return nil
+	// }
 
 	// Log address of incoming connection.
 	p, ok := peer.FromContext(srv.Context())

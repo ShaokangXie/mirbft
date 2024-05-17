@@ -79,6 +79,7 @@ type pbftInstance struct {
 	waitForPreviousBlock map[int32]map[int32]struct{}
 	lastProposeSn        int32
 	firstUncommitSn      map[int32]int32
+	inLadonViewChange    bool // True in view change mode, accepting only piority messages
 	// Ladon
 }
 
@@ -216,16 +217,22 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	for i := 0; i < membership.NumNodes(); i++ {
 		pi.firstUncommitSn[int32(i)] = int32(i) + seg.FirstSN() - int32(seg.SegID()%membership.NumNodes())
 	}
+	pi.inLadonViewChange = false
 	// Ladon
 }
 
 func (pi *pbftInstance) lead() {
 
-	logger.Debug().Int("segID", pi.segment.SegID()).Msg("Leading segment.")
+	logger.Debug().
+		Int32("OwnID", membership.OwnID).
+		Int("segID", pi.segment.SegID()).
+		Int("NumNodes", membership.NumNodes()).
+		Msg("Leading segment.")
+
 	batchSize := pi.segment.BatchSize()
 
 	// Simulate a straggler.
-	if membership.SimulatedStraggler[int32(pi.segment.SegID())%int32(membership.NumNodes())] == 1 && (config.Config.CrashTiming == "Straggler" || config.Config.CrashTiming == "ByzantineStraggler") {
+	if membership.SimulatedStraggler[membership.OwnID] == 1 && (config.Config.CrashTiming == "Straggler" || config.Config.CrashTiming == "ByzantineStraggler") {
 		if byzantineDelay == -1 {
 			byzantineDelay = 10 * config.Config.BatchTimeoutMs
 		}
@@ -331,7 +338,7 @@ func (pi *pbftInstance) lead() {
 
 		//Ladon
 
-		if membership.SimulatedStraggler[int32(pi.segment.SegID())%int32(membership.NumNodes())] == 1 && (config.Config.CrashTiming == "ByzantineStraggler") && len(newSeqMsg.Tnlog) > membership.Quorum() {
+		if membership.SimulatedStraggler[membership.OwnID] == 1 && (config.Config.CrashTiming == "ByzantineStraggler") && len(newSeqMsg.Tnlog) > membership.Quorum() {
 			// drop some high ranks(tn)
 			//sort.Ints(newSeqMsg.Tnlog)
 			//logger.Info().Msg("drop some high ranks")
@@ -404,17 +411,20 @@ func (pi *pbftInstance) lead() {
 func (pi *pbftInstance) proposeSN(preprepare *pb.PbftPreprepare, sn int32) {
 
 	// Simulate a crash if configured so.
-	// if membership.OwnID==0 && pi.view==0 {
+	if membership.SimulatedCrashes[membership.OwnID] != nil {
 
-	// 	if (config.Config.CrashTiming == "EpochStart" && sn == pi.segment.FirstSN()) ||
-	// 		(config.Config.CrashTiming == "EpochEnd" && sn == pi.segment.LastSN()) {
+		if ((config.Config.CrashTiming == "EpochStart" && sn == pi.segment.FirstSN()) ||
+			(config.Config.CrashTiming == "EpochEnd" && sn == pi.segment.LastSN())) &&
+			sn < int32(config.Config.EpochLength) {
 
-	// 		logger.Info().Str("crashTiming", config.Config.CrashTiming).Msg("Simulating node crash.")
-	// 		// messenger.Crashed = true
-	// 		time.Sleep(30*time.Second)
-	// 	}
-
-	// }
+			logger.Info().Str("crashTiming", config.Config.CrashTiming).Msg("Simulating node crash.")
+			messenger.Crashed = true
+			go func() {
+				time.Sleep(time.Duration(0.9*float64(config.Config.ViewChangeTimeoutMs)) * time.Millisecond)
+				messenger.Crashed = false
+			}()
+		}
+	}
 
 	// New batches are proposed only in view 0
 	if pi.view > 0 {
@@ -910,7 +920,7 @@ func (pi *pbftInstance) handleHtnmsg(htnmsg *pb.HtnMsg, msg *pb.ProtocolMessage)
 
 	lock.Lock()
 	pi.htnRecv[sn] += 1
-	if pi.htnRecv[sn] == membership.Quorum() {
+	if pi.htnRecv[sn] == membership.Quorum() && !pi.inLadonViewChange {
 		lock.Unlock()
 		//for key, value := range pi.htnLog {
 		//	logger.Info().Int32("key", key).Int32("value", value).Msg("collect rankset")
@@ -999,7 +1009,7 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 
 	// Ladon
 	// Only the batch has preprepareMsg can do Ladon
-	if batch.preprepareMsg != nil {
+	if batch.preprepareMsg != nil && !pi.inLadonViewChange {
 		lock.Lock()
 		firstUncommitSn := pi.firstUncommitSn[batch.preprepareMsg.Leader]
 		lock.Unlock()
@@ -1105,7 +1115,7 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 	// 	Msg("announce 4")
 
 	// Ladon
-	if batch.preprepareMsg != nil {
+	if batch.preprepareMsg != nil && !pi.inLadonViewChange {
 		lock.Lock()
 		pi.firstUncommitSn[batch.preprepareMsg.Leader] = sn + int32(membership.NumNodes())
 		// If some block is waiting for this block's commit, commit it.
@@ -1285,6 +1295,7 @@ func (pi *pbftInstance) sendViewChange() {
 	}
 	//Advance view
 	pi.inViewChange = true
+	pi.inLadonViewChange = true
 	pi.startView(pi.view + 1)
 
 	p := make(map[int32]*pb.PbftPrepare)
@@ -1640,6 +1651,7 @@ func (pi *pbftInstance) maybeSendNewView(view int32) {
 	// If we reach this point, we have collected enough viewchange messages to start a new view.
 	// If we were not yet in a view change, we enter it here (can happen if we did not send a viewchange ourselves).
 	pi.inViewChange = true
+	pi.inLadonViewChange = true
 	pi.startView(view)
 
 	// Set a flag to stop accepting more view change messages
@@ -1906,7 +1918,10 @@ func (pi *pbftInstance) sendNewView() {
 	pi.inViewChange = false
 
 	// Process messages from backlog for the new view
+	logger.Debug().Msg("pi.backlog.process(pi.view)...")
 	pi.backlog.process(pi.view)
+
+	// pi.inLadonViewChange = false
 
 	// Enqueue the message and to all except myself.
 	for _, nodeID := range pi.segment.Followers() {
@@ -2160,18 +2175,11 @@ func (pi *pbftInstance) handleNewView(signed *pb.SignedMsg, senderID int32) erro
 	// Process messages from backlog for the new view
 	pi.backlog.process(view)
 
+	// pi.inLadonViewChange = false
 	return nil
 }
 
 func (pi *pbftInstance) processSerializedMessages() {
-	if membership.OwnID == 0 && pi.segment.FirstSN() < int32(membership.NumNodes()) {
-		if config.Config.CrashTiming == "EpochStart" {
-
-			logger.Info().Str("crashTiming", config.Config.CrashTiming).Msg("Simulating node crash.")
-			// messenger.Crashed = true
-			time.Sleep(30 * time.Second)
-		}
-	}
 
 	logger.Info().Int("segID", pi.segment.SegID()).Msg("Starting serialized message processing.")
 
