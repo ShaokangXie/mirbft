@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/announcer"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/log"
@@ -31,6 +30,12 @@ import (
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/request"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	logger "github.com/rs/zerolog/log"
+)
+
+var (
+	///rank
+	hranklog = make(map[int]int32)
 )
 
 // Implements chained HotStuff for the sequence numbers of the segment.
@@ -71,6 +76,8 @@ type hotStuffInstance struct {
 }
 
 type hotStuffNode struct {
+	///rank
+	rank      int32
 	height    int32
 	sn        int32
 	leader    int32
@@ -114,6 +121,15 @@ func (hi *hotStuffInstance) init(seg manager.Segment, orderer *HotStuffOrderer) 
 	// Initialize new view  vote counting structure
 	hi.newViewVotes = make(map[int32]map[int32]*pb.HotStuffNewView)
 
+	///rank
+	rootrank := (int32(hi.segment.FirstSN())-int32(hi.segment.SegID())%int32(membership.NumNodes()))/int32(membership.NumNodes()) - 1
+	lock.Lock()
+	hranklog[hi.segment.SegID()] = rootrank
+	lock.Unlock()
+	logger.Info().Int32("rootrank", rootrank).
+		Int("segment", hi.segment.SegID()).
+		Msg("Rootrank for the segment.")
+
 	// Initialise the root node
 	node := &pb.HotStuffNode{
 		Height: 0,
@@ -125,9 +141,11 @@ func (hi *hotStuffInstance) init(seg manager.Segment, orderer *HotStuffOrderer) 
 			Height:    0,
 			Signature: nil,
 		},
+		Rank: rootrank,
 	}
 	rootNode :=
 		&hotStuffNode{
+			rank:      rootrank,
 			height:    0,
 			node:      node,
 			digest:    hotStuffDigest(node),
@@ -176,7 +194,9 @@ func (hi *hotStuffInstance) start() {
 // Proposes a new value for sequence number sn in Segment segment by creating a new leaf node and broadcasting
 // the proposal to all followers of the segment.
 func (hi *hotStuffInstance) proposeSN(sn int32) {
+	rank := (sn - int32(hi.segment.SegID()%membership.NumNodes())) / int32(membership.NumNodes())
 	logger.Info().Int32("sn", sn).
+		Int32("rank", rank).
 		Int("segment", hi.segment.SegID()).
 		Int32("height", hi.leaf.height+1).
 		Int32("view", hi.view).
@@ -201,14 +221,29 @@ func (hi *hotStuffInstance) proposeSN(sn int32) {
 
 		hi.next = hi.next + 1
 		// If we have proposed all the sequence numbers in the segment, mark the segment as "proposed"
-		if int32(hi.next) == hi.segment.Len() {
+		// if int32(hi.next) == hi.segment.Len() {
+		// 	hi.segmentProposed = true
+		// }
+		if sn == hi.segment.LastSN() {
 			hi.segmentProposed = true
 		}
-
 		// If the segment is not proposed yet schedule a new batch
 		if !hi.segmentProposed {
 			go func() {
-				hi.newBatch <- hi.segment.Buckets().CutBatch(config.Config.BatchSize, config.Config.BatchTimeout)
+				// if int32(hi.segment.SegID())%int32(membership.NumNodes()) == 0 && config.Config.CrashTiming == "Straggler" {
+				if int32(hi.segment.SegID())%int32(membership.NumNodes()) < int32(config.Config.StragglerCnt) && config.Config.CrashTiming == "Straggler" {
+					logger.Debug().
+						Int("segment", hi.segment.SegID()).
+						Msg("Straggler. Start wait for requests.")
+					timeout := time.Duration(int(10*float64(config.Config.BatchTimeoutMs))) * time.Millisecond
+					hi.segment.Buckets().WaitForRequests(100000000000, timeout)
+					logger.Debug().
+						Int("segment", hi.segment.SegID()).
+						Msg("Straggler. Finish wait for requests.")
+				} else {
+					hi.segment.Buckets().WaitForRequests(100000000000, config.Config.BatchTimeout)
+				}
+				hi.newBatch <- hi.segment.Buckets().CutBatch(config.Config.BatchSize, 0)
 			}()
 		}
 
@@ -217,7 +252,7 @@ func (hi *hotStuffInstance) proposeSN(sn int32) {
 		hi.next = hi.next + 1
 	}
 
-	new := hi.newNode(hi.leaf, batch, hi.highQC, sn, hi.leaf.height+1, membership.OwnID)
+	new := hi.newNode(hi.leaf, batch, hi.highQC, sn, rank, hi.leaf.height+1, membership.OwnID)
 
 	if _, ok := hi.sn2height[sn]; ok {
 		new.dummy = true
@@ -241,8 +276,16 @@ func (hi *hotStuffInstance) proposeSN(sn int32) {
 		},
 	}
 
+	// if int32(hi.segment.SegID())%int32(membership.NumNodes()) == 0 && config.Config.CrashTiming == "Straggler" {
+	// 	logger.Info().
+	// 		Int("segment", hi.segment.SegID()).
+	// 		Msg("Straggler.")
+	// 	time.Sleep(3000 * time.Millisecond)
+	// }
+
 	logger.Info().Int32("sn", sn).
 		Int("segment", hi.segment.SegID()).
+		Int32("rank", new.rank).
 		Int32("height", new.height).
 		Int32("view", hi.view).
 		Int32("senderId", membership.OwnID).
@@ -339,6 +382,12 @@ func (hi *hotStuffInstance) handleProposal(proposal *pb.HotStuffProposal, msg *p
 			Msgf("Proposal node does not extend locked node with height %d", hi.vheight)
 		return nil
 	}
+	///rank
+	lock.Lock()
+	if proposal.Node.Rank > hranklog[hi.segment.SegID()] {
+		hranklog[hi.segment.SegID()] = proposal.Node.Rank
+	}
+	lock.Unlock()
 
 	batch := request.NewBatch(proposal.Node.Batch)
 	if batch == nil {
@@ -357,8 +406,7 @@ func (hi *hotStuffInstance) handleProposal(proposal *pb.HotStuffProposal, msg *p
 	}
 
 	hi.vheight = proposal.Node.Height
-
-	new := hi.newNode(hi.nodes[proposal.Node.Certificate.Height], batch, proposal.Node.Certificate, sn, proposal.Node.Height, senderID)
+	new := hi.newNode(hi.nodes[proposal.Node.Certificate.Height], batch, proposal.Node.Certificate, sn, proposal.Node.Rank, proposal.Node.Height, senderID)
 	batch.MarkInFlight()
 
 	// Update to own log
@@ -418,9 +466,14 @@ func (hi *hotStuffInstance) sendVote(node *hotStuffNode) {
 		Int32("leader", hi.leader).
 		Msg("Creating VOTE.")
 
+	lock.Lock()
+	ownrank := hranklog[int(membership.OwnID)]
+	lock.Unlock()
+
 	vote := &pb.HotStuffVote{
 		Height: node.height,
 		Digest: node.digest,
+		Rank:   ownrank,
 	}
 
 	data, err := proto.Marshal(vote)
@@ -499,7 +552,12 @@ func (hi *hotStuffInstance) handleVote(signed *pb.SignedMsg, sn, senderID int32)
 	}
 
 	hi.leaf.votes[senderID] = signed
-
+	///rank
+	lock.Lock()
+	if vote.Rank > hranklog[hi.segment.SegID()] {
+		hranklog[hi.segment.SegID()] = vote.Rank
+	}
+	lock.Unlock()
 	// Check for a quorum of votes
 	if !hi.leaf.quorum && voteQuorum(hi.leaf) {
 		hi.leaf.quorum = true
@@ -539,17 +597,28 @@ func (hi *hotStuffInstance) handleVote(signed *pb.SignedMsg, sn, senderID int32)
 
 	// Propose next batch
 	// Check we have still un-proposed sequence numbers in the segment
-	if int32(hi.next) < hi.segment.Len() {
-		hi.proposeSN(hi.segment.SNs()[hi.next])
+	// if int32(hi.next) < hi.segment.Len() {
+	// 	hi.proposeSN(hi.segment.SNs()[hi.next])
+	// 	return nil
+	// }
+	lock.Lock()
+	currank := hranklog[hi.segment.SegID()] + 1
+	lock.Unlock()
+	newsn := currank*int32(membership.NumNodes()) + int32(hi.segment.SegID()%membership.NumNodes())
+	if newsn <= hi.segment.LastSN() {
+		hi.proposeSN(newsn)
 		return nil
 	}
 
 	// If we have proposed up to last height + 2 we have poroposed enough to make sure the last height commits
 	if int32(hi.next) > hi.segment.Len()+2 {
+		//if newsn > hi.segment.LastSN() +2*int32(membership.NumNodes()) {
+		logger.Info().Int("hi.next", hi.next).Msg("enough end dummy nodes.")
 		return nil
 	}
 
 	// Reuse the last sequence number to make sure that it commits
+	logger.Info().Int32("LastSN", hi.segment.LastSN()).Msg("Reuse the last SN.")
 	hi.proposeSN(hi.segment.LastSN())
 
 	return nil
@@ -592,6 +661,7 @@ func (hi *hotStuffInstance) sendNewView() {
 	messenger.EnqueueMsg(orderMsg, hi.leader)
 }
 
+// /rank TODO: to be revised
 func (hi *hotStuffInstance) handleNewView(newview *pb.HotStuffNewView, sn, senderID int32) error {
 	logger.Info().Int32("sn", sn).
 		Int("segment", hi.segment.SegID()).
@@ -711,9 +781,32 @@ func (hi *hotStuffInstance) announce(node *hotStuffNode, sn int32, reqBatch *pb.
 		request.RemoveBatch(node.batch)
 	}
 
+	if node.rank != node.parent.rank+1 {
+		for i := node.parent.rank + 1; i < node.rank; i = i + 1 {
+			sn2i := int32(hi.segment.SegID()%membership.NumNodes()) + int32(membership.NumNodes())*i
+			logger.Info().
+				Int("segment", hi.segment.SegID()).
+				Int32("sn", sn2i).
+				Int32("rank", i).
+				Msg("Delivered nil batch.")
+			// Msg("Announcement nil block.")
+
+			emptyBatch := &request.Batch{Requests: make([]*request.Request, 0, 0)}
+			logEntry1 := &log.Entry{
+				Sn:      sn2i,
+				Batch:   emptyBatch.Message(),
+				Aborted: aborted,
+			}
+			announcer.Announce(logEntry1)
+			hi.next = hi.next + 1
+		}
+	}
 	logger.Info().
 		Int("segment", hi.segment.SegID()).
-		Int32("sn", hi.height2sn[node.height]).
+		Int32("lastrank", node.parent.rank).
+		Int32("sn", sn).
+		//Int32("sn", hi.height2sn[node.height]).
+		Int32("rank", node.rank).
 		Int32("height", node.height).
 		Msg("Announcement.")
 
@@ -729,7 +822,7 @@ func (hi *hotStuffInstance) announce(node *hotStuffNode, sn int32, reqBatch *pb.
 }
 
 // Creates a new node
-func (hi *hotStuffInstance) newNode(parent *hotStuffNode, batch *request.Batch, qc *pb.HotStuffQC, sn int32, height int32, leader int32) *hotStuffNode {
+func (hi *hotStuffInstance) newNode(parent *hotStuffNode, batch *request.Batch, qc *pb.HotStuffQC, sn int32, rank int32, height int32, leader int32) *hotStuffNode {
 	node := &pb.HotStuffNode{
 		View:   hi.view,
 		Parent: parent.digest,
@@ -739,8 +832,10 @@ func (hi *hotStuffInstance) newNode(parent *hotStuffNode, batch *request.Batch, 
 			Signature: qc.Signature,
 		},
 		Height: height,
+		Rank:   rank,
 	}
 	new := &hotStuffNode{
+		rank:   rank,
 		sn:     sn,
 		height: height,
 		leader: leader,
@@ -757,6 +852,7 @@ func (hi *hotStuffInstance) newNode(parent *hotStuffNode, batch *request.Batch, 
 	logger.Debug().
 		Int("segment", hi.segment.SegID()).
 		Int32("sn", sn).
+		Int32("rank", rank).
 		Int32("height", height).
 		Int32("parent", parent.height).
 		Msg("New node")
@@ -801,7 +897,7 @@ func (hi *hotStuffInstance) updateHighQC(qc *pb.HotStuffQC) {
 			// If we dont' have the node of the highQC locally, create a new node from the highQC node
 			// with parent the highest available node.
 			batch := request.NewBatch(qc.Node.Batch)
-			leaf := hi.newNode(hi.nodes[len(hi.nodes)-1], batch, qc.Node.Certificate, -1, qc.Node.Height, hi.leader)
+			leaf := hi.newNode(hi.nodes[len(hi.nodes)-1], batch, qc.Node.Certificate, -1, qc.Node.Rank, qc.Node.Height, hi.leader)
 			// Potentially adding dummy nodes inbetween.
 			hi.addNode(leaf)
 			hi.leaf = leaf

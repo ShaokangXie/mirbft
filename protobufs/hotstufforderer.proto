@@ -13,12 +13,14 @@ message HotStuffNode {
     Batch batch = 4;
     HotStuffQC certificate = 5;
     bool aborted = 6;
+    int32 rank = 7;
 }
 
 // Since we keep a fixed leader for the segment, the vote does not contain a full node, just a reference
 message HotStuffVote {
     int32 height = 1;
     bytes digest = 2;
+    int32 rank = 3;
 }
 
 message HotStuffQC {
