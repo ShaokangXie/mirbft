@@ -17,6 +17,8 @@ package orderer
 import (
 	"bytes"
 	"fmt"
+	"runtime"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -150,6 +152,8 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	// Next indext of sn of the segment to propose
 	// pi.next = 0
 
+	pi.freeMemory()
+
 	// Attach segment to the instance
 	pi.segment = seg
 
@@ -186,6 +190,62 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.startTs = time.Now().UnixNano()
 
 	pi.readyToPropose = make(chan struct{})
+}
+
+func (pi *pbftInstance) freeMemory() {
+	// 删除嵌套的 map
+	for k := range pi.batches {
+		for j := range pi.batches[k] {
+			delete(pi.batches[k], j)
+		}
+		// 将内层 map 置为 nil
+		pi.batches[k] = nil
+	}
+	// 将外部 map 置为 nil
+	pi.batches = nil
+
+	runtime.GC()
+	debug.FreeOSMemory()
+
+	for k := range pi.checkpointMsgs {
+		delete(pi.checkpointMsgs, k)
+	}
+	pi.checkpointMsgs = nil
+
+	runtime.GC()
+	debug.FreeOSMemory()
+
+	for k := range pi.checkpointDigests {
+		delete(pi.checkpointDigests, k)
+	}
+	pi.checkpointDigests = nil
+
+	runtime.GC()
+	debug.FreeOSMemory()
+
+	for k := range pi.viewChange {
+		delete(pi.viewChange, k)
+	}
+	pi.viewChange = nil
+
+	runtime.GC()
+	debug.FreeOSMemory()
+
+	if pi.backlog != nil {
+		for k := range pi.backlog.backlogMsgs {
+			delete(pi.backlog.backlogMsgs, k)
+		}
+		pi.backlog.backlogMsgs = nil
+		runtime.GC()
+		debug.FreeOSMemory()
+	}
+
+	if pi.segment != nil {
+		log.FreeOldEntries(pi.segment.FirstSN(), pi.segment.LastSN())
+	}
+
+	runtime.GC()
+	debug.FreeOSMemory()
 }
 
 func (pi *pbftInstance) lead() {
@@ -802,10 +862,10 @@ func (pi *pbftInstance) handlePBFTCheckpoint(msg *pb.PbftCheckpoint, senderID in
 		}
 
 		// Save final batch digests obtained from checkpoint
-		pi.finalDigests = make(map[int32][]byte)
-		for i, sn := range pi.segment.SNs() {
-			pi.finalDigests[sn] = msg.Digests[i]
-		}
+		// pi.finalDigests = make(map[int32][]byte)
+		// for i, sn := range pi.segment.SNs() {
+		// 	pi.finalDigests[sn] = msg.Digests[i]
+		// }
 
 		// Try to catch up after some delay
 		time.AfterFunc(catchupDelay, func() {
@@ -1766,7 +1826,7 @@ func (pi *pbftInstance) processSerializedMessages() {
 
 func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 	// Check the tye of the message.
-	start := time.Now()
+	// start := time.Now()
 	switch m := msg.Msg.(type) {
 	case *pb.ProtocolMessage_Preprepare:
 		err := pi.handlePreprepare(m.Preprepare, msg)
@@ -1777,11 +1837,11 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 				Int32("senderID", msg.SenderId).
 				Msg("PbftOrderer ignores preprepare message.")
 		}
-		timeCost := time.Since(start).Milliseconds()
-		logger.Info().
-			Int64("costTime", timeCost).
-			Str("msg", "Preprepare").
-			Msg("handlemessage cost.")
+		// timeCost := time.Since(start).Milliseconds()
+		// logger.Info().
+		// 	Int64("costTime", timeCost).
+		// 	Str("msg", "Preprepare").
+		// 	Msg("handlemessage cost.")
 	case *pb.ProtocolMessage_Prepare:
 		err := pi.handlePrepare(m.Prepare, msg)
 		if err != nil {
@@ -1791,13 +1851,13 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 				Int32("senderID", msg.SenderId).
 				Msg("PbftOrderer ignores prepare message.")
 		}
-		timeCost := time.Since(start).Milliseconds()
-		if timeCost > 0 {
-			logger.Info().
-				Int64("costTime", timeCost).
-				Str("msg", "Prepare").
-				Msg("handlemessage cost.")
-		}
+		// timeCost := time.Since(start).Milliseconds()
+		// if timeCost > 0 {
+		// 	logger.Info().
+		// 		Int64("costTime", timeCost).
+		// 		Str("msg", "Prepare").
+		// 		Msg("handlemessage cost.")
+		// }
 	case *pb.ProtocolMessage_Commit:
 		err := pi.handleCommit(m.Commit, msg)
 		if err != nil {
@@ -1807,13 +1867,13 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 				Int32("senderID", msg.SenderId).
 				Msg("PbftOrderer cannot handle commit message.")
 		}
-		timeCost := time.Since(start).Milliseconds()
-		if timeCost > 0 {
-			logger.Info().
-				Int64("costTime", timeCost).
-				Str("msg", "Commit").
-				Msg("handlemessage cost.")
-		}
+		// timeCost := time.Since(start).Milliseconds()
+		// if timeCost > 0 {
+		// 	logger.Info().
+		// 		Int64("costTime", timeCost).
+		// 		Str("msg", "Commit").
+		// 		Msg("handlemessage cost.")
+		// }
 	case *pb.ProtocolMessage_PbftCheckpoint:
 		err := pi.handlePBFTCheckpoint(m.PbftCheckpoint, msg.SenderId)
 		if err != nil {
@@ -1828,11 +1888,11 @@ func (pi *pbftInstance) handleMessage(msg *pb.ProtocolMessage) {
 	case *pb.ProtocolMessage_Newseqno:
 		preprepare := m.Newseqno
 		pi.proposeSN(preprepare, msg.Sn)
-		timeCost := time.Since(start).Milliseconds()
-		logger.Info().
-			Int64("costTime", timeCost).
-			Str("msg", "Newseqno").
-			Msg("handlemessage cost.")
+		// timeCost := time.Since(start).Milliseconds()
+		// logger.Info().
+		// 	Int64("costTime", timeCost).
+		// 	Str("msg", "Newseqno").
+		// 	Msg("handlemessage cost.")
 	case *pb.ProtocolMessage_Viewchange:
 		signed := m.Viewchange
 		err := pi.handleViewChange(signed, msg.SenderId)

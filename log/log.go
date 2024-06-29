@@ -15,11 +15,13 @@
 package log
 
 import (
+	"runtime"
+	"runtime/debug"
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	logger "github.com/rs/zerolog/log"
 )
 
 const (
@@ -162,11 +164,12 @@ func EntriesOutOfOrder() chan *Entry {
 
 // Blocks until entry with sequence number sn and all previous entries are committed.
 // TODO: Do we really want to wait until all previous entries are committed too?
-//       This can unnecessarily delay a segment just because there is a hole somewhere in the past.
-//       (Move the notification to CommitEntry instead of PublishEntries?, If yes, watch out for the lock!)
-//       Added after changes to the SimpleCheckpointer:
-//         SimpleCheckpointer relies on the absence of holes guaranteed by WaitForEntry.
-//         The Manager relies on the absence of holes for consistent watermark advancement.
+//
+//	This can unnecessarily delay a segment just because there is a hole somewhere in the past.
+//	(Move the notification to CommitEntry instead of PublishEntries?, If yes, watch out for the lock!)
+//	Added after changes to the SimpleCheckpointer:
+//	  SimpleCheckpointer relies on the absence of holes guaranteed by WaitForEntry.
+//	  The Manager relies on the absence of holes for consistent watermark advancement.
 func WaitForEntry(sn int32) {
 
 	// Need this lock to protect from concurrent publishers.
@@ -299,4 +302,21 @@ func publishEntry(e *Entry, subscribers []chan *Entry) {
 			logger.Warn().Int32("sn", e.Sn).Msg("Unblocking.")
 		}
 	}
+}
+
+func FreeOldEntries(snStart int32, snEnd int32) {
+	// for i := snStart; i <= snEnd; i++ {
+	// 	entries.Delete(i)
+	// }
+
+	entries.Range(func(key, value interface{}) bool {
+		entries.Delete(key)
+		return true
+	})
+	// entries = nil
+	entries = sync.Map{}
+	for i := 0; i < 3; i++ {
+		runtime.GC()
+	}
+	debug.FreeOSMemory()
 }
