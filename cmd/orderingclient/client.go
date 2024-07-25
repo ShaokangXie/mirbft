@@ -31,7 +31,6 @@ import (
 
 const (
 	reqFanout = 3
-	contractP = 0.5
 )
 
 var (
@@ -220,7 +219,7 @@ func (c *client) fetchFromFile(numRequests int) {
 
 	cnt := 0
 
-	file, err := os.Open("/home/hz/ethtx.csv")
+	file, err := os.Open("/root/ethtx.csv")
 	if err != nil {
 		panic(err)
 	}
@@ -269,7 +268,7 @@ func (c *client) fetchFromFile(numRequests int) {
 			panic(err)
 		}
 		isContract := int32(0)
-		if rand.Float64() < contractP {
+		if rand.Intn(100) < config.Config.ContractProportion {
 			isContract = 1
 		}
 		newRequest := &pb.ClientRequest{

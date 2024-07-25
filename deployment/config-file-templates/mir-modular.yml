@@ -42,6 +42,7 @@ Checkpointer: CHECKPOINTER # Checkpointer type. One of {Simple, Signing}
 Failures: FAILURES
 Faulty: FAULTY
 StragglerCnt: STRAGGLERCNT
+ContractProportion: CONTRACTPROPORTION
 TotalClients: TOTALCLIENTS
 
 PrivKeyCnt: PRIVKEYCNT

@@ -48,12 +48,13 @@ type configuration struct {
 	BatchSizeIncrement    int    `yaml:"BatchSizeIncrement"`
 
 	// Startup config
-	Orderer      string `yaml:"Orderer"`
-	Manager      string `yaml:"Manager"`
-	Checkpointer string `yaml:"Checkpointer"`
-	Failures     int    `yaml:"Failures"`
-	StragglerCnt int    `yaml:"StragglerCnt"`
-	TotalClients int    `yaml:"TotalClients"`
+	Orderer            string `yaml:"Orderer"`
+	Manager            string `yaml:"Manager"`
+	Checkpointer       string `yaml:"Checkpointer"`
+	Failures           int    `yaml:"Failures"`
+	StragglerCnt       int    `yaml:"StragglerCnt"`
+	ContractProportion int    `yaml:"ContractProportion"`
+	TotalClients       int    `yaml:"TotalClients"`
 
 	CrashTiming       string `yaml:"CrashTiming"`
 	RandomSeed        int64  `yaml:"RandomSeed"`
@@ -144,6 +145,7 @@ func LoadFile(configFileName string) {
 	logger.Debug().Str("Manager", Config.Manager).Msg("Config")
 	logger.Debug().Int("Failures", Config.Failures).Msg("Config")
 	logger.Debug().Int("StragglerCnt", Config.StragglerCnt).Msg("Config")
+	logger.Debug().Int("ContractProportion", Config.ContractProportion).Msg("Config")
 	logger.Debug().Int("TotalClients", Config.TotalClients).Msg("Config")
 	logger.Debug().Str("CrashTiming", Config.CrashTiming).Msg("Config")
 	logger.Debug().Int("CheckpointInterval", Config.CheckpointInterval).Msg("Config")
