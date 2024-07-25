@@ -27,6 +27,7 @@ import (
 	cmap "github.com/orcaman/concurrent-map"
 	// pb "github.com/hyperledger-labs/mirbft/protobufs"
 
+	"github.com/hyperledger-labs/mirbft/config"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	logger "github.com/rs/zerolog/log"
 )
@@ -39,14 +40,17 @@ var (
 	// Guards logSubscribers, logSubscribersOutOfOrder, entrySubscribers and firstEmptySN
 	lock = sync.Mutex{}
 
-	gasFee = 0.003
+	gasFee = 0.0
 
 	A = 1
 )
 
 func init() {
 	balance = cmap.New[float64]()
-
+	if tmpNum, err := strconv.ParseFloat(config.Config.Gasfee, 64); err == nil {
+		logger.Debug().Float64("Gasfee", tmpNum).Msg("Gas Fee.")
+		gasFee = tmpNum
+	}
 	logger.Debug().Int("a", A).Msg("In balance init() !")
 }
 

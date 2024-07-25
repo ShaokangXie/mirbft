@@ -629,7 +629,7 @@ func (c *client) registerResponse(clientSN int32, peerID int32) {
 			lock.Lock()
 			c.requests[clientSN] = nil
 			lock.Unlock()
-			c.log.Info().Int32("clSeqNr", clientSN).Msg("123 Request finished (out of order).")
+			c.log.Debug().Int32("clSeqNr", clientSN).Msg("Request finished (out of order).")
 
 			// select {
 			// case <-c.watermarkWindow:
@@ -657,7 +657,7 @@ func (c *client) registerResponse(clientSN int32, peerID int32) {
 		// Process finished requests.
 		for c.finished[c.oldestClientSN] {
 			c.trace.Event(tracing.REQ_DELIVERED, int64(clientSN), time.Now().UnixNano()/1000-c.submitTimestamps[clientSN])
-			c.log.Info().Int32("clSeqNr", c.oldestClientSN).Msg("Request delivered (in order).")
+			c.log.Debug().Int32("clSeqNr", c.oldestClientSN).Msg("Request delivered (in order).")
 			select {
 			case <-c.watermarkWindow:
 			default:

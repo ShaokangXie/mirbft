@@ -137,6 +137,9 @@ source /root/.bashrc
 # echo "Installing bls"
 # go get -u github.com/herumi/bls-eth-go-binary/bls
 
+echo "Installing cmap"
+go get -u github.com/orcaman/concurrent-map
+
 echo "Creating app folders."
 cd $GOPATH || exit 1
 mkdir -p src/github.com/hyperledger-labs

@@ -43,6 +43,7 @@ Failures: FAILURES
 Faulty: FAULTY
 StragglerCnt: STRAGGLERCNT
 ContractProportion: CONTRACTPROPORTION
+Gasfee: GASFEE
 TotalClients: TOTALCLIENTS
 
 PrivKeyCnt: PRIVKEYCNT

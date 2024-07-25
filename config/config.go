@@ -54,6 +54,7 @@ type configuration struct {
 	Failures           int    `yaml:"Failures"`
 	StragglerCnt       int    `yaml:"StragglerCnt"`
 	ContractProportion int    `yaml:"ContractProportion"`
+	Gasfee             string `yaml:"Gasfee"`
 	TotalClients       int    `yaml:"TotalClients"`
 
 	CrashTiming       string `yaml:"CrashTiming"`
@@ -146,6 +147,7 @@ func LoadFile(configFileName string) {
 	logger.Debug().Int("Failures", Config.Failures).Msg("Config")
 	logger.Debug().Int("StragglerCnt", Config.StragglerCnt).Msg("Config")
 	logger.Debug().Int("ContractProportion", Config.ContractProportion).Msg("Config")
+	logger.Debug().Str("Gasfee", Config.Gasfee).Msg("Config")
 	logger.Debug().Int("TotalClients", Config.TotalClients).Msg("Config")
 	logger.Debug().Str("CrashTiming", Config.CrashTiming).Msg("Config")
 	logger.Debug().Int("CheckpointInterval", Config.CheckpointInterval).Msg("Config")
