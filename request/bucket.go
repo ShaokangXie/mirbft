@@ -19,10 +19,11 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
+	"github.com/hyperledger-labs/mirbft/account"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Represents a single bucket of client requests.
@@ -301,8 +302,8 @@ func (b *Bucket) PrependMultiple(reqs []*Request) {
 	end := reqs[len(reqs)-1]
 
 	// Hook the prepared chain of Requests to the start of the (locked) bucket
-	b.Lock()
-	defer b.Unlock()
+	// b.Lock()
+	// defer b.Unlock()
 
 	if b.FirstRequest == nil {
 		b.FirstRequest = start
@@ -321,18 +322,43 @@ func (b *Bucket) PrependMultiple(reqs []*Request) {
 // Returns the resulting slice obtained by appending the Requests to dest.
 // ATTENTION: Bucket must be LOCKED when calling this method.
 func (b *Bucket) RemoveFirst(n int, dest []*Request) []*Request {
+	pendingRequests := make([]*Request, 0, 0)
 
 	// While there are still Requests in the bucket and the limit has not been reached.
 	for ; b.numRequests > 0 && n > 0; n-- {
 
+		// logger.Debug().Int("numRequests", b.numRequests).Int("bktId", b.id).Msg("In loop of RemoveFirst !")
 		if b.FirstRequest == nil {
 			logger.Error().Int("numRequests", b.numRequests).Int("bktId", b.id).Msg("FirstRequest nil!")
 		}
-		// Move the first request from the bucket into the destination slice.
-		dest = append(dest, b.FirstRequest)
-		b.removeNoLock(b.FirstRequest)
+		// TODO: Add dependency analyze here
+		if account.RequestIsValid(b.FirstRequest.Msg) {
+			// Move the first request from the bucket into the destination slice.
+			dest = append(dest, b.FirstRequest)
+			b.removeNoLock(b.FirstRequest)
+		} else {
+			reqPointer := b.FirstRequest
+			b.removeNoLock(b.FirstRequest)
+			pendingRequests = append(pendingRequests, reqPointer)
+			n++
+		}
+		// logger.Debug().Int("numRequests", b.numRequests).Int("bktId", b.id).Msg("before removeNoLock !")
+		// b.removeNoLock(b.FirstRequest)
+		// logger.Debug().Int("numRequests", b.numRequests).Int("bktId", b.id).Msg("after removeNoLock !")
 	}
 
+	// for _, r := range pendingRequests {
+
+	// 	// tx := &pb.Transaction{}
+	// 	// proto.Unmarshal(r.Msg.Payload, tx)
+	// 	// logger.Debug().Str("sender", tx.SenderHash).Str("receiver", tx.ReceiverHash).Float64("Amount", tx.Amount).Float64("Fee", tx.Fee).Msg("In loop of pendingRequests !")
+
+	// 	b.addNoLock(r)
+	// }
+
+	b.PrependMultiple(pendingRequests)
+
+	// logger.Debug().Msg("return dest !")
 	return dest
 }
 
@@ -348,10 +374,12 @@ func (b *Bucket) Remove(reqs []*Request) {
 
 // Removes a request from the bucket without acquiring the bucket lock.
 // ATTENTION: Does not (and must not) remove the request from the index.
-//            The index can be cleaned up only after the client watermarks have been updated,
-//            to prevent the situation where, in the same epoch, a request is received from a leader,
-//            added to the bucket, committed and removed from the bucket, and then added again after a late reception
-//            from the client.
+//
+//	The index can be cleaned up only after the client watermarks have been updated,
+//	to prevent the situation where, in the same epoch, a request is received from a leader,
+//	added to the bucket, committed and removed from the bucket, and then added again after a late reception
+//	from the client.
+//
 // ATTENTION: Bucket must be LOCKED when calling this method.
 func (b *Bucket) removeNoLock(req *Request) {
 
@@ -413,9 +441,12 @@ func (b *Bucket) PruneIndex(watermarks *sync.Map) { // expected map type of wate
 	// All request SNs between the old (including) and the new (excluding) watermark can safely be pruned.
 	watermarks.Range(func(clID interface{}, wmRange interface{}) bool {
 		for clSN := wmRange.(watermarkRange).oldWM; clSN < wmRange.(watermarkRange).newWM; clSN++ {
-			if GetBucketNr(clID.(int32), clSN) == b.id {
+			reqID := int64(clID.(int32))<<32 + int64(clSN)
+			if b.reqIndex[reqID] == nil {
+				continue
+			}
+			if GetBucketNr(clID.(int32), clSN, b.reqIndex[reqID].Msg.RequestId.SenderId) == b.id {
 
-				reqID := int64(clID.(int32))<<32 + int64(clSN)
 				delete(b.reqIndex, reqID)
 			}
 		}

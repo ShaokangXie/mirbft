@@ -1,15 +1,20 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
+	"math/rand"
+
+	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
 	"github.com/hyperledger-labs/mirbft/discovery"
@@ -19,11 +24,18 @@ import (
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/request"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 )
 
 const (
 	reqFanout = 3
+	contractP = 0.5
+)
+
+var (
+	lock sync.RWMutex
 )
 
 type client struct {
@@ -166,9 +178,10 @@ func newClient(dServAddr string, numRequests int) *client {
 	// Generate all request messages if configured to do so
 	if config.Config.PrecomputeRequests {
 		cl.log.Info().Int("numRequests", numRequests).Msg("Precomputing requests.")
-		for seqNr := int32(0); seqNr < int32(cl.numRequests); seqNr++ {
-			cl.requests[seqNr] = cl.createRequest(seqNr)
-		}
+		cl.fetchFromFile(cl.numRequests)
+		// for seqNr := int32(0); seqNr < int32(cl.numRequests); seqNr++ {
+		// 	cl.requests[seqNr] = cl.createRequest(seqNr)
+		// }
 	}
 
 	return cl
@@ -201,6 +214,89 @@ func (c *client) discoverPeers(dServAddr string) {
 	})
 }
 
+func (c *client) fetchFromFile(numRequests int) {
+	fmt.Println("fetchFromFile !")
+	var err error
+
+	cnt := 0
+
+	file, err := os.Open("/home/hz/ethtx.csv")
+	if err != nil {
+		panic(err)
+	}
+	defer file.Close()
+
+	allReqs := make([]*pb.Transaction, 0, 0)
+
+	br := bufio.NewReader(file)
+	for {
+		cnt++
+		a, _, c := br.ReadLine()
+		if c == io.EOF {
+			break
+		}
+		res := strings.Split(string(a), ",")
+		Id, err := strconv.ParseInt(res[0], 10, 32)
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
+		Amount, err := strconv.ParseFloat(res[3], 64)
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
+		Fee, err := strconv.ParseFloat(res[4], 64)
+		if err != nil {
+			logger.Fatal().Msg(err.Error())
+		}
+		tx := &pb.Transaction{Id: int32(Id), SenderHash: res[1], ReceiverHash: res[2], Amount: Amount, Fee: Fee}
+
+		allReqs = append(allReqs, tx)
+	}
+	logger.Info().Int32("TxCnt", int32(cnt)).Msg("Load ethTx data !")
+
+	rand.Seed(time.Now().UnixNano())
+
+	for seqNr := int32(0); seqNr < int32(numRequests); seqNr++ {
+		// c.log.Debug().Int32("id", (seqNr*int32(config.Config.TotalClients)+c.ownClientID)%int32(len(allReqs))).Msg("Fetch tx !")
+		index := (seqNr*int32(config.Config.TotalClients) + c.ownClientID) % int32(len(allReqs))
+		payload, err := proto.Marshal(allReqs[index])
+		if err != nil {
+			logger.Fatal().Msg("Marshal fail !")
+			panic(err)
+		}
+		senderId, err := strconv.Atoi(allReqs[index].SenderHash)
+		if err != nil {
+			panic(err)
+		}
+		isContract := int32(0)
+		if rand.Float64() < contractP {
+			isContract = 1
+		}
+		newRequest := &pb.ClientRequest{
+			RequestId: &pb.RequestID{
+				ClientId: c.ownClientID,
+				ClientSn: seqNr,
+				SenderId: int32(senderId),
+			},
+			Payload:       payload,
+			PayloadRandom: randomRequestPayload,
+			Signature:     nil,
+			IsContract:    isContract,
+		}
+		c.requests[seqNr] = newRequest
+
+		// Sign request message.
+		if config.Config.SignRequests {
+			c.requests[seqNr].Signature, err = crypto.Sign(request.Digest(c.requests[seqNr]), c.privKey)
+			if err != nil {
+				c.log.Error().Err(err).Int32("clSn", seqNr).Msg("Failed signing request.")
+			}
+		}
+		// TODO: Add public key to request or remove the Pubkey request field.
+
+	}
+}
+
 func (c *client) createRequest(seqNr int32) *pb.ClientRequest {
 
 	// Create request message.
@@ -212,6 +308,8 @@ func (c *client) createRequest(seqNr int32) *pb.ClientRequest {
 		Payload:   randomRequestPayload,
 		Signature: nil,
 	}
+
+	c.log.Debug().Int32("clSeqNr", req.RequestId.ClientSn).Msg("Created request.")
 
 	// Sign request message.
 	var err error = nil
@@ -236,8 +334,8 @@ func (c *client) Run(wg *sync.WaitGroup) {
 	var ordererIDs []int32
 	if config.Config.LeaderPolicy == "SimulatedRandomFailures" {
 		ordererIDs = manager.NewLeaderPolicy(config.Config.LeaderPolicy).GetLeaders(0)
-	//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
-	//	ordererIDs = membership.CorrectPeers()
+		//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
+		//	ordererIDs = membership.CorrectPeers()
 	} else {
 		ordererIDs = membership.AllNodeIDs()
 	}
@@ -249,6 +347,7 @@ func (c *client) Run(wg *sync.WaitGroup) {
 	c.startBucketAssignmentReceivers()
 
 	c.log.Info().Msg("Connected to orderers.")
+	c.log.Info().Int("count", len(ordererIDs)).Msg("Non crashing node count.")
 
 	// Initialize tracing
 	// Client IDs are negative to distinguish them from peer IDs.
@@ -315,10 +414,17 @@ func (c *client) Run(wg *sync.WaitGroup) {
 		// We the number of in-flight requests every second until their number is 0.
 		// TODO: This is a dummy ugly implementation, make it nicer.
 		c.Lock()
+		preLen := -1
 		for len(c.submittedTo) > 0 {
+			c.log.Info().Int("len(c.submittedTo)", len(c.submittedTo)).Msg("In Loop for len(c.submittedTo) > 0 ")
+
 			c.Unlock()
-			time.Sleep(time.Second)
+			time.Sleep(5 * time.Second)
 			c.Lock()
+			if len(c.submittedTo) < 100 && preLen == len(c.submittedTo) {
+				break
+			}
+			preLen = len(c.submittedTo)
 		}
 		c.Unlock()
 
@@ -395,7 +501,9 @@ func (c *client) submitRequest(seqNr int32) {
 
 	var req *pb.ClientRequest = nil
 	if config.Config.PrecomputeRequests {
+		lock.RLock()
 		req = c.requests[seqNr]
+		lock.RUnlock()
 	} else {
 		req = c.createRequest(seqNr)
 	}
@@ -421,7 +529,9 @@ func (c *client) submitRequest(seqNr int32) {
 	}
 
 	// Initialize request-related data structures.
+	lock.Lock()
 	c.requests[seqNr] = req // for the case where requests are not precomputed. otherwise not necessary.
+	lock.Unlock()
 	c.responses[seqNr] = make(map[int32]bool)
 	c.finished[seqNr] = false
 	c.submittedTo[seqNr] = make(map[int32]bool)
@@ -436,6 +546,8 @@ func (c *client) submitRequest(seqNr int32) {
 	for _, ordererID := range destIDs {
 		if c.reqSinks[ordererID] != nil {
 			c.reqSinks[ordererID] <- req
+			c.log.Debug().Int32("clSeqNr", req.RequestId.ClientSn).
+				Int32("ordererID", ordererID).Msg("Send Message to orderers.")
 		} else {
 			c.log.Warn().Int32("ordererId", ordererID).Msg("Not sending request to orderer. No connection established.")
 		}
@@ -500,17 +612,36 @@ func (c *client) registerResponse(clientSN int32, peerID int32) {
 	if clientSN >= c.oldestClientSN && clientSN < c.oldestClientSN+clientWatermarkWindowSize {
 
 		// Note received response
-		c.responses[clientSN][peerID] = true
+		lock.Lock()
+		if c.responses[clientSN] != nil {
+			c.responses[clientSN][peerID] = true
+		}
+		lock.Unlock()
 
 		// Mark request as finished if enough responses were received (for the first time)
+		lock.Lock()
 		if enoughResponses(len(c.responses[clientSN])) && !c.finished[clientSN] {
+			lock.Unlock()
 			now := time.Now().UnixNano() / 1000
 			c.trace.Event(tracing.ENOUGH_RESP, int64(clientSN), now-c.sentTimestamps[clientSN])
 			c.trace.Event(tracing.REQ_FINISHED, int64(clientSN), now-c.submitTimestamps[clientSN])
 			c.finished[clientSN] = true
 			delete(c.submittedTo, clientSN)
+			lock.Lock()
 			c.requests[clientSN] = nil
-			c.log.Info().Int32("clSeqNr", clientSN).Msg("Request finished (out of order).")
+			lock.Unlock()
+			c.log.Info().Int32("clSeqNr", clientSN).Msg("123 Request finished (out of order).")
+
+			// select {
+			// case <-c.watermarkWindow:
+			// default:
+			// 	panic("Watermark window underflow!")
+			// }
+			lock.Lock()
+			delete(c.responses, clientSN)
+			lock.Unlock()
+		} else {
+			lock.Unlock()
 		}
 
 		// Sanity check: Never should receive responses for requests that shouldn't have been issued.
@@ -601,7 +732,9 @@ func (c *client) resubmitPendingRequests() {
 		if !c.finished[seqNr] {
 
 			// Get request itself and it new destinations.
+			lock.RLock()
 			req := c.requests[seqNr]
+			lock.RUnlock()
 			destIDs := c.guessTargetOrderers(req)
 			c.log.Trace().
 				Int32("clSeqNr", req.RequestId.ClientSn).
@@ -649,7 +782,7 @@ func (c *client) newBucketsReady(epoch int32) *pb.BucketAssignment {
 func (c *client) guessTargetOrderers(req *pb.ClientRequest) []int32 {
 
 	guess := make([]int32, reqFanout, reqFanout)
-	b := request.GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn)
+	b := request.GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn, req.RequestId.SenderId)
 
 	for i := 0; i < reqFanout; i++ {
 		guess[i] = c.currentBucketAssignment[b]

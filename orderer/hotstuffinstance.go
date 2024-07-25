@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/announcer"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/log"
@@ -31,6 +30,7 @@ import (
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/request"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Implements chained HotStuff for the sequence numbers of the segment.
@@ -208,7 +208,19 @@ func (hi *hotStuffInstance) proposeSN(sn int32) {
 		// If the segment is not proposed yet schedule a new batch
 		if !hi.segmentProposed {
 			go func() {
-				hi.newBatch <- hi.segment.Buckets().CutBatch(config.Config.BatchSize, config.Config.BatchTimeout)
+				if int32(hi.segment.SegID())%int32(membership.NumNodes()) == 0 && config.Config.CrashTiming == "Straggler" {
+					logger.Debug().
+						Int("segment", hi.segment.SegID()).
+						Msg("Straggler. Start wait for requests.")
+					timeout := time.Duration(int(0.16666667*float64(config.Config.ViewChangeTimeoutMs))) * time.Millisecond
+					hi.segment.Buckets().WaitForRequests(100000000000, timeout)
+					logger.Debug().
+						Int("segment", hi.segment.SegID()).
+						Msg("Straggler. Finish wait for requests.")
+				} else {
+					hi.segment.Buckets().WaitForRequests(config.Config.BatchSize, config.Config.BatchTimeout)
+				}
+				hi.newBatch <- hi.segment.Buckets().CutBatch(config.Config.BatchSize, 0)
 			}()
 		}
 

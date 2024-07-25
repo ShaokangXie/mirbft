@@ -18,11 +18,11 @@ import (
 	"encoding/binary"
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
 	"github.com/hyperledger-labs/mirbft/membership"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
+	logger "github.com/rs/zerolog/log"
 )
 
 var (
@@ -170,12 +170,13 @@ type Request struct {
 
 // Allocates a new Request object from a client request message and adds it by calling Add().
 func AddReqMsg(reqMsg *pb.ClientRequest) *Request {
+
 	return Add(&Request{
 		Msg:      reqMsg,
 		Digest:   Digest(reqMsg),
 		Buffer:   getBuffer(reqMsg.RequestId.ClientId),
 		Bucket:   getBucket(reqMsg),
-		Verified: false, // signature has not yet been verified
+		Verified: true,  // signature has not yet been verified
 		InFlight: false, // request has not yet been proposed (an identical one might have been, though, in which case we discard this request object)
 		Next:     nil,   // This request object is not part of a bucket list.
 		Prev:     nil,
@@ -210,13 +211,15 @@ func Add(req *Request) *Request {
 		if err := crypto.CheckSig(req.Digest, membership.ClientPubKey(req.Msg.RequestId.ClientId), req.Msg.Signature); err == nil {
 			req.Verified = true
 		} else {
-			logger.Warn().
-				Err(err).
-				Int32("clSn", req.Msg.RequestId.ClientSn).
-				Int32("clId", req.Msg.RequestId.ClientId).
-				Msg("Invalid request signature.")
+			// logger.Warn().
+			// Err(err).
+			// 	Int32("clSn", req.Msg.RequestId.ClientSn).
+			// 	Int32("clId", req.Msg.RequestId.ClientId).
+			// 	Msg("Invalid request signature.")
 
-			return nil
+			// return nil
+			logger.Debug().
+				Msg("Ignore invalid request signature.")
 		}
 
 		// Add verified request.
@@ -301,13 +304,17 @@ func AdvanceWatermarks(entries []interface{}) { //expected type is []*log.Entry
 
 // Returns a bucket to which the request message belongs.
 func getBucket(req *pb.ClientRequest) *Bucket {
-	return Buckets[GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn)]
+	// if config.Config.PrecomputeRequests {
+	// 	return GetBucketByHashing(req)
+	// }
+	return Buckets[GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn, req.RequestId.SenderId)]
 }
 
 // This is the hash function that computes the bucket number of a request.
 // This implementation assigns requests from the same client to buckets in a round-robin way.
-func GetBucketNr(clID int32, clSN int32) int {
-	return int((clID + clSN) % int32(config.Config.NumBuckets))
+func GetBucketNr(clID int32, clSN int32, senderId int32) int {
+	// return int((clID + clSN) % int32(config.Config.NumBuckets))
+	return int(senderId % int32(config.Config.NumBuckets))
 }
 
 // Returns the request buffer associated with a client ID.

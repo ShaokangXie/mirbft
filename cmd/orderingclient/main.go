@@ -5,11 +5,12 @@ import (
 	"os"
 	"sync"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
+	"github.com/hyperledger-labs/mirbft/account"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/membership"
 	"github.com/hyperledger-labs/mirbft/profiling"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 )
 
 var (
@@ -77,12 +78,13 @@ func main() {
 	numRequests := config.Config.RequestsPerClient
 
 	// Generate random request payload
-	randomRequestPayload = make([]byte, config.Config.RequestPayloadSize)
+	randomRequestPayload = make([]byte, config.Config.RequestPayloadSize-50)
 	rand.Read(randomRequestPayload)
 
 	logger.Info().
 		Int("numClients", numClients).
 		Int("numRequests", numRequests).
+		Int("totalClients", config.Config.TotalClients).
 		Msg("Starting clients.")
 
 	// Create wait group for initializing and running clients
@@ -91,6 +93,12 @@ func main() {
 	// Create all clients first (and have them pre-compute all requests)
 	logger.Info().Msg("Initilizing clients.")
 	clients := make([]*client, numClients)
+
+	// Load Tx data from file
+	if config.Config.PrecomputeRequests {
+		account.LoadData()
+	}
+
 	wg.Add(numClients)
 	for i := 0; i < numClients; i++ {
 		go func(j int) { clients[j] = newClient(dServAddr, numRequests); wg.Done() }(i)

@@ -2,7 +2,7 @@
 Logging: LOGGINGLEVEL # Zerolog level. One of {trace, debug, info, warning, error}
 
 # Communication channel config
-UseTLS:               true  # Use TLS for both peer-to-peer and client-to-peer communication
+UseTLS:               false  # Use TLS for both peer-to-peer and client-to-peer communication
                             # The 3 options below are ignored if UseTLS is set to false.
 CACertFile:           "tls-data/ca.pem"
 KeyFile:              "tls-data/auth.key"
@@ -41,6 +41,11 @@ Manager: "Mir"      # Manager type. One of {Dummy, Mir}
 Checkpointer: CHECKPOINTER # Checkpointer type. One of {Simple, Signing}
 Failures: FAILURES
 Faulty: FAULTY
+StragglerCnt: STRAGGLERCNT
+TotalClients: TOTALCLIENTS
+
+PrivKeyCnt: PRIVKEYCNT
+UseSig: USESIG
 CrashTiming: CRASHTIMING # EpochStart EpochEnd
                          # For peers that are supposed to simulate a crash, CrashTiming decides whether the crash
                          # happens at the start or at the end of the first epoch.
@@ -99,8 +104,8 @@ VerifyRequestsEarly: VERIFYEARLY   # If true, incoming requests are verified bef
                                     # SignRequests must be set to true for this field to be considered.
 ClientPrivKeyFile: "tls-data/client-ecdsa-256.key" # Key for client request Signing.
 ClientPubKeyFile:  "tls-data/client-ecdsa-256.pem" # Key for client request verification.
-PrecomputeRequests: false # Pre-compute (and sign, if applicable) all requests at a client before starting to submit.
-                          # RequestsPerClient must not be zero if PrecomputeRequests is true.
+PrecomputeRequests: PRECOMPUTE # Pre-compute (and sign, if applicable) all requests at a client before starting to submit.
+                               # RequestsPerClient must not be zero if PrecomputeRequests is true.
 
 # System parameters
 RequestHandlerThreads: REQUESTHANDLERTHREADS # Number of threads that write incoming requests to request Buffers.

@@ -17,11 +17,11 @@ package request
 import (
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/log"
 	"github.com/hyperledger-labs/mirbft/messenger"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Represents a responder to client requests
@@ -29,7 +29,8 @@ type Responder struct {
 
 	// Channel through which the log will push entries to the responder in sequence number order.
 	// The responder reads from this channel and responds to the corresponding client for each entry.
-	entriesChan chan *log.Entry
+	entriesChan           chan *log.Entry
+	entriesOutOfOrderChan chan *log.Entry
 }
 
 // Creates a new responder.
@@ -38,7 +39,8 @@ type Responder struct {
 // the responder has been created).
 func NewResponder() *Responder {
 	return &Responder{
-		entriesChan: log.Entries(),
+		entriesChan:           log.Entries(),
+		entriesOutOfOrderChan: log.EntriesOutOfOrder(),
 	}
 }
 
@@ -54,19 +56,50 @@ func (r *Responder) Start(wg *sync.WaitGroup) {
 
 		// For each ClientRequest in the ordered batch
 		for _, req := range e.Batch.Requests {
-			logger.Trace().
-				Int32("clientId", req.RequestId.ClientId).
-				Int32("clientSn", req.RequestId.ClientSn).
-				Int32("sn", e.Sn).
-				Msg("Sending response to client.")
+			if req.IsContract == 1 {
 
-			// Respond to the corresponding client.
-			tracing.MainTrace.Event(tracing.RESP_SEND, int64(req.RequestId.ClientId), int64(req.RequestId.ClientSn))
+				logger.Trace().
+					Int32("clientId", req.RequestId.ClientId).
+					Int32("clientSn", req.RequestId.ClientSn).
+					Int32("sn", e.Sn).
+					Msg("Sending response to client.")
 
-			messenger.RespondToClient(req.RequestId.ClientId, &pb.ClientResponse{
-				OrderSn:  e.Sn,
-				ClientSn: req.RequestId.ClientSn,
-			})
+				// Respond to the corresponding client.
+				tracing.Trace2.EventForClientInPeer(tracing.RESP_SEND, int64(req.RequestId.ClientSn), req.RequestId.ClientId)
+
+				messenger.RespondToClient(req.RequestId.ClientId, &pb.ClientResponse{
+					OrderSn:  e.Sn,
+					ClientSn: req.RequestId.ClientSn,
+				})
+			}
+		}
+	}
+}
+
+func (r *Responder) StartOutOfOrder(wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	// Read log entries (containing ordered batches) from
+	// the entries channel until the channel is closed.
+	for e := <-r.entriesOutOfOrderChan; e != nil; e = <-r.entriesOutOfOrderChan {
+
+		// For each ClientRequest in the ordered batch
+		for _, req := range e.Batch.Requests {
+			if req.IsContract == 0 {
+				logger.Trace().
+					Int32("clientId", req.RequestId.ClientId).
+					Int32("clientSn", req.RequestId.ClientSn).
+					Int32("sn", e.Sn).
+					Msg("Sending response to client.(Out Of Order)")
+
+				// Respond to the corresponding client.
+				tracing.Trace2.EventForClientInPeer(tracing.RESP_SEND, int64(req.RequestId.ClientSn), req.RequestId.ClientId)
+
+				messenger.RespondToClient(req.RequestId.ClientId, &pb.ClientResponse{
+					OrderSn:  e.Sn,
+					ClientSn: req.RequestId.ClientSn,
+				})
+			}
 		}
 	}
 }

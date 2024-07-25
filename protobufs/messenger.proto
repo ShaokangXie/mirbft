@@ -48,7 +48,11 @@ message ProtocolMessage {
         MissingEntry missing_entry = 26;
         PbftCatchUp pbft_catchup = 27;
         HotStuffNewView hotstuff_newview = 28;
+        HotStuffSendTimestamp hotstuff_sendtimestamp = 29;
     }
+    string type = 30;
+    int32 hightimestamp = 31;
+    int32 fake_view = 32;
 }
 
 message ProtocolMessageBatch {

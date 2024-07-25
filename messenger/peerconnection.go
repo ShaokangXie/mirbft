@@ -19,11 +19,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/membership"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/tracing"
 	"github.com/hyperledger-labs/mirbft/util"
+	logger "github.com/rs/zerolog/log"
 )
 
 const (

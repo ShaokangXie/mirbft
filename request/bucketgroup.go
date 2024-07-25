@@ -19,9 +19,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/membership"
+	logger "github.com/rs/zerolog/log"
 )
 
 type BucketGroup struct {
@@ -112,8 +112,12 @@ func (bg *BucketGroup) CutBatch(size int, timeout time.Duration) *Batch {
 		initCut = int(bg.totalRequests) / len(bg.buckets)
 	}
 
+	logger.Debug().
+		Int("nBuckets", len(bg.buckets)).
+		Msg("bd.buckets length")
 	// Add initial requests to the batch.
 	for _, b := range bg.buckets {
+		// logger.Debug().Int("bg.buckets", i).Msg("i th buckets")
 		newBatch.Requests = b.RemoveFirst(initCut, newBatch.Requests)
 	}
 
@@ -142,7 +146,8 @@ func (bg *BucketGroup) CutBatch(size int, timeout time.Duration) *Batch {
 	if config.Config.LeaderPolicy == "Single" {
 		totalReq /= membership.NumNodes() // For Single leader policy, use the raw throughput cap, not adjusted to system size.
 	}
-	waitingTime := 1000000000 * int64(totalReq/config.Config.ThroughputCap) // In nanoseconds
+	// waitingTime := 1000000000 * int64(totalReq/config.Config.ThroughputCap) // In nanoseconds
+	waitingTime := int64(1000000000) // In nanoseconds
 	atomic.StoreInt64(&bg.nextBatchTimestamp, time.Now().UnixNano()+waitingTime)
 
 	logger.Debug().
@@ -167,7 +172,8 @@ func (bg *BucketGroup) WaitForRequests(numRequests int, timeout time.Duration) {
 // Blocks until the buckets in the BucketGroup (cumulatively) contain numRequests requests or until timeout elapses.
 // When WaitForRequests returns, bg.totalRequests accurately represents the total number of requests in the BucketGroup.
 // ATTENTION: All Buckets must be LOCKED when calling this method.
-//            May release and re-acquire the bucket locks before returning.
+//
+//	May release and re-acquire the bucket locks before returning.
 func (bg *BucketGroup) waitForRequestsLocked(numRequests int, timeout time.Duration) {
 
 	// Count all requests in all buckets in the group.
@@ -175,7 +181,8 @@ func (bg *BucketGroup) waitForRequestsLocked(numRequests int, timeout time.Durat
 	bg.totalRequests = int32(bg.CountRequests())
 
 	// If there are enough requests in the bucket, return immediately.
-	if int(bg.totalRequests) >= numRequests || (timeout == 0) {
+	if timeout == 0 {
+	// if int(bg.totalRequests) >= numRequests || (timeout == 0) {
 		return
 	}
 
@@ -268,4 +275,9 @@ func (bg *BucketGroup) unlockBuckets() {
 	for _, b := range bg.buckets {
 		b.Unlock()
 	}
+}
+
+// Returns a list with the bucket IDs  in the Bucket Group.
+func (bg *BucketGroup) GetBucket() []*Bucket {
+	return bg.buckets
 }

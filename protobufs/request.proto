@@ -7,8 +7,10 @@ package protobufs;
 message ClientRequest {
     RequestID request_id = 1;
     bytes payload = 2;
-    bytes pubkey = 3;
-    bytes signature = 4;
+    bytes payload_random = 3;
+    bytes pubkey = 4;
+    bytes signature = 5;
+    int32 is_contract = 6;
 }
 
 message ClientResponse {
@@ -19,6 +21,7 @@ message ClientResponse {
 message RequestID {
     int32 client_id = 1;
     int32 client_sn = 2;
+    int32 sender_id = 3;
 }
 
 message Batch {
@@ -51,3 +54,12 @@ message BucketAssignment {
 message ListOfInt32 {
     repeated int32 vals = 1;
 }
+
+message Transaction {
+  int32 id = 1;
+  string sender_hash = 2;
+  string receiver_hash = 3;
+  double amount = 4;
+  double fee = 5;
+}
+

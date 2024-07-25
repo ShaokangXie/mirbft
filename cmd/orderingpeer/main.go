@@ -5,8 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
+	"github.com/hyperledger-labs/mirbft/account"
 	"github.com/hyperledger-labs/mirbft/checkpoint"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
@@ -19,6 +18,8 @@ import (
 	"github.com/hyperledger-labs/mirbft/request"
 	"github.com/hyperledger-labs/mirbft/statetransfer"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Flag indicating whether profiling is enabled.
@@ -35,6 +36,7 @@ func main() {
 	ownPrivateIP := os.Args[4]
 
 	config.LoadFile(configFileName)
+	account.LoadData()
 
 	// Configure logger
 	zerolog.SetGlobalLevel(config.Config.LoggingLevel)
@@ -87,15 +89,15 @@ func main() {
 	// Start profiler if necessary
 	// ATTENTION! We first look for argument 6, and only then check argument 5
 	//            (as the presence of profiling influences setting up of tracing).
-	if len(os.Args) > 6 {
+	if len(os.Args) > 7 {
 		profilingEnabled = true // UGLY DIRTY CODE!
 		logger.Info().Msg("Profiling enabled.")
-		setUpProfiling(os.Args[6])
+		setUpProfiling(os.Args[7])
 	}
 
 	// Set up tracing if necessary
-	if len(os.Args) > 5 {
-		setUpTracing(os.Args[5], ownID)
+	if len(os.Args) > 6 {
+		setUpTracing(os.Args[5], os.Args[6], ownID)
 	}
 
 	// Declare variables for component modules.
@@ -132,7 +134,7 @@ func main() {
 	// (Currently the graceful termination is not implemented, so waiting on wg will take forever and the process
 	// needs to be killed.)
 	wg := sync.WaitGroup{}
-	wg.Add(5) // messenger, checkpointer, orderer, manager, responder
+	wg.Add(6) // messenger, checkpointer, orderer, manager, responder*2
 
 	// Start the messaging subsystem.
 	// Connect needs to come after starting the messenger which launches the gRPC server everybody connects to.
@@ -164,6 +166,7 @@ func main() {
 	// By now all the modules must be initialized and ready to process messages.
 	// After starting, the modules will produce messages on their own.
 	go rsp.Start(&wg)
+	go rsp.StartOutOfOrder(&wg)
 	go chkp.Start(&wg)
 	go mngr.Start(&wg)
 	go ord.Start(&wg)
@@ -186,10 +189,11 @@ func setUpProfiling(outFilePrefix string) {
 }
 
 // Sets up tracing of events.
-func setUpTracing(outFileName string, ownID int32) {
+func setUpTracing(outFileName string, outFileName2 string, ownID int32) {
 
 	// Initialize tracing with output file name given at command line
 	tracing.MainTrace.Start(outFileName, ownID)
+	tracing.Trace2.Start(outFileName2, ownID)
 
 	// TODO: Move the CPU tracing to a more appropriate place
 	//       For now, it is here, as it depends on tracing being enabled.
@@ -202,6 +206,7 @@ func setUpTracing(outFileName string, ownID int32) {
 	// TODO: ATTENTION! Implement some synchronization here, otherwise the profiler might exit the process before
 	//                  the tracer is done flushing its buffers.
 	tracing.MainTrace.StopOnSignal(os.Interrupt, !profilingEnabled)
+	tracing.Trace2.StopOnSignal(os.Interrupt, !profilingEnabled)
 
 	logger.Info().Str("traceFile", outFileName).Msg("Started tracing.")
 }
