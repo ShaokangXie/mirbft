@@ -49,7 +49,7 @@ systemSizes="16" # Must be sorted in ascending order!
 failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
 fixBatchRate=false
 
-StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
 privKeyNumEachPeer=(5) # Using as buffer for lagged instance
 UseSig=(false)
 

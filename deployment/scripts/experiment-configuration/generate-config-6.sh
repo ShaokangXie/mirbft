@@ -49,11 +49,11 @@ systemSizes="16" # Must be sorted in ascending order!
 failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
 fixBatchRate=false
 
-StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
 privKeyNumEachPeer=(5) # Using as buffer for lagged instance
 UseSig=(false)
 
-contractProportion="54" # (%) The proportion of contract 
+contractProportion="60" # (%) The proportion of contract 
 gasfee="0.003" # The gas fee
 
 reuseFaulty=true  # If true, both correct and faulty peers will have the same tag and will be launched together, with the same config file.
@@ -105,7 +105,7 @@ singleLeaderEpoch=$minEpochLength
 
 # Parameters to tune:
 batchsizes="4096"           # [requests]
-batchrates="32"             # [batches/s]
+batchrates="24"             # [batches/s]
 minBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
 # minBatchTimeout="200"      # [ms]
 maxBatchTimeout=$(($systemSizes * 1000 / $batchrates))  # [ms]
@@ -128,10 +128,10 @@ function skip() {
 throughputsAuthPbft=$()
 # throughputsAuthPbft[4]="128 256 512 1024 2048 4096 8192 12288"
 throughputsAuthPbft[4]="4000"
-throughputsAuthPbft[8]="50000 55000 60000 65000"
-throughputsAuthPbft[16]="50000 55000"
-throughputsAuthPbft[32]="50000 55000 60000 65000"
-throughputsAuthPbft[64]="50000 55000 60000 65000"
+throughputsAuthPbft[8]="60000 65000"
+throughputsAuthPbft[16]="50000 55000 60000 65000"
+throughputsAuthPbft[32]="30000 35000 40000 45000"
+throughputsAuthPbft[64]="30000 35000 40000 45000"
 throughputsAuthPbft[128]=""
 throughputsNoAuthPbft=$()
 throughputsNoAuthPbft[4]="512"

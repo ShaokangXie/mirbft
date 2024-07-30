@@ -53,6 +53,7 @@ type configuration struct {
 	Checkpointer       string `yaml:"Checkpointer"`
 	Failures           int    `yaml:"Failures"`
 	StragglerCnt       int    `yaml:"StragglerCnt"`
+	FixBatchRate       bool   `yaml:"FixBatchRate"`
 	ContractProportion int    `yaml:"ContractProportion"`
 	Gasfee             string `yaml:"Gasfee"`
 	TotalClients       int    `yaml:"TotalClients"`
@@ -148,6 +149,7 @@ func LoadFile(configFileName string) {
 	logger.Debug().Int("StragglerCnt", Config.StragglerCnt).Msg("Config")
 	logger.Debug().Int("ContractProportion", Config.ContractProportion).Msg("Config")
 	logger.Debug().Str("Gasfee", Config.Gasfee).Msg("Config")
+	logger.Debug().Bool("FixBatchRate", Config.FixBatchRate).Msg("Config")
 	logger.Debug().Int("TotalClients", Config.TotalClients).Msg("Config")
 	logger.Debug().Str("CrashTiming", Config.CrashTiming).Msg("Config")
 	logger.Debug().Int("CheckpointInterval", Config.CheckpointInterval).Msg("Config")
@@ -162,7 +164,7 @@ func LoadFile(configFileName string) {
 	logger.Debug().Str("LeaderPolicy", Config.LeaderPolicy).Msg("Config")
 	logger.Debug().Int("DefaultLeaderBan", Config.DefaultLeaderBan).Msg("Config")
 	logger.Debug().Int("NumBuckets", Config.NumBuckets).Msg("Config")
-	logger.Debug().Int("BatchSize", Config.BatchTimeoutMs).Msg("Config")
+	logger.Debug().Int("BatchTimeoutMs", Config.BatchTimeoutMs).Msg("Config")
 	logger.Debug().Bool("DisabledViewChange", Config.DisabledViewChange).Msg("Config")
 	logger.Debug().Int("ViewChangeTimeout", Config.ViewChangeTimeoutMs).Msg("Config")
 	logger.Debug().Int("ClientTraceSampling", Config.ClientTraceSampling).Msg("Config")

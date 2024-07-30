@@ -148,7 +148,7 @@ func CommitEntry(requests []*pb.ClientRequest) {
 		proto.Unmarshal(request.Payload, tx)
 		if request.IsContract == 1 {
 
-			logger.Info().Msg("Freeze the gas fee first for a contract tx")
+			// logger.Info().Msg("Freeze the gas fee first for a contract tx")
 			// Freeze the gas fee first for a contract tx
 			senderBalance, ok := balance.Get(tx.SenderHash)
 			if ok {
