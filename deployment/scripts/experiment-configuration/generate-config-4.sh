@@ -53,7 +53,7 @@ StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggl
 privKeyNumEachPeer=(5) # Using as buffer for lagged instance
 UseSig=(false)
 
-contractProportion="40" # (%) The proportion of contract 
+contractProportion="100" # (%) The proportion of contract 
 gasfee="0.003" # The gas fee
 
 reuseFaulty=true  # If true, both correct and faulty peers will have the same tag and will be launched together, with the same config file.
