@@ -4,11 +4,15 @@ option go_package = "./;protobufs";
 
 package protobufs;
 
+enum Op { GET = 0; PUT = 1; }
 message ClientRequest {
     RequestID request_id = 1;
     bytes payload = 2;
     bytes pubkey = 3;
     bytes signature = 4;
+    Op    op = 5;
+    int32 key = 6;
+    int32 value = 7;
 }
 
 message ClientResponse {

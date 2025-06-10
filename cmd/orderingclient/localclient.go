@@ -5,6 +5,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"math/rand"
 
 	"github.com/rs/zerolog"
 	logger "github.com/rs/zerolog/log"
@@ -119,6 +120,9 @@ func (c *LocalClient) submitRequest(seqNr int32) {
 		},
 		Payload:   randomRequestPayload,
 		Signature: nil,
+		Op:	pb.Op_PUT,
+		Key: int32(rand.Intn(100000)), // Random key for the request.
+		Value: 0,		
 	}
 
 	// Write request to in-flight request channel.

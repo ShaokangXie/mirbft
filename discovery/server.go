@@ -34,7 +34,7 @@ type slave struct {
 
 // Represents a discovery server and saves all its state.
 type DiscoveryServer struct {
-	// pb.UnimplementedDiscoveryServer
+	pb.UnimplementedDiscoveryServer
 
 	// Fields related to peer discovery.
 	peers                sync.Map           // Peer identities are added here as peers register.

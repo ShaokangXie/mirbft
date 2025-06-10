@@ -38,7 +38,7 @@ type Responder struct {
 // the responder has been created).
 func NewResponder() *Responder {
 	return &Responder{
-		entriesChan: log.Entries(),
+		entriesChan: ExecutedEntries(),
 	}
 }
 
@@ -54,7 +54,7 @@ func (r *Responder) Start(wg *sync.WaitGroup) {
 
 		// For each ClientRequest in the ordered batch
 		for _, req := range e.Batch.Requests {
-			logger.Trace().
+			logger.Debug().
 				Int32("clientId", req.RequestId.ClientId).
 				Int32("clientSn", req.RequestId.ClientSn).
 				Int32("sn", e.Sn).

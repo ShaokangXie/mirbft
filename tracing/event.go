@@ -36,6 +36,7 @@ const (
 	BUCKET_STATE
 	NEW_EPOCH
 	VIEW_CHANGE
+	REQ_EXEC
 )
 
 func (et EventType) String() string {
@@ -59,6 +60,7 @@ func (et EventType) String() string {
 		"BUCKET_STATE",
 		"NEW_EPOCH",
 		"VIEW_CHANGE",
+		"REQ_EXEC",
 	}[et]
 }
 

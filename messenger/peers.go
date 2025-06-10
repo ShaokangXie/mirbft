@@ -61,7 +61,7 @@ type connectionTest struct {
 
 // Implementation of the gRPC server that listens for connections from other peers.
 type messengerServer struct {
-	// pb.UnimplementedMessengerServer
+	pb.UnimplementedMessengerServer
 }
 
 // Implementation of the gRPC Listen service (multi-request-single-response).

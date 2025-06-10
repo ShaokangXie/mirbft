@@ -19,8 +19,8 @@ cd ~
 
 echo "Installing golang."
 
-wget https://storage.googleapis.com/golang/go1.17.2.linux-amd64.tar.gz
-tar xpzf go1.17.2.linux-amd64.tar.gz
+wget https://storage.googleapis.com/golang/go1.21.2.linux-amd64.tar.gz
+tar xpzf go1.21.2.linux-amd64.tar.gz
 
 sudo mkdir -p /opt/gopath
 sudo chown -R  $user:$group /opt/gopath

@@ -32,6 +32,6 @@ func Init() {
 		BufferCapacity: config.Config.EventBufferSize,
 		//ProtocolEventCapacity: config.Config.EventBufferSize,
 		//RequestEventCapacity:  config.Config.EventBufferSize,
-		EthereumEventCapacity: 1024,
+		EthereumEventCapacity: 8192,
 	}
 }

@@ -5,3 +5,8 @@
 *.coverprofile
 *.tmp
 .idea
+
+deployment-data
+
+protobufs/*.pb.go
+

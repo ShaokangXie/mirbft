@@ -338,6 +338,9 @@ func performServerHandshake(cl pb.Messenger_RequestClient, ownClientID int32) {
 		},
 		Payload:   nil,
 		Signature: nil,
+		Op:	pb.Op_PUT,
+		Key: 0,
+		Value: 0,
 	})
 	if err != nil {
 		logger.Error().Msg("Failed to send dummy request to server during handshake.")

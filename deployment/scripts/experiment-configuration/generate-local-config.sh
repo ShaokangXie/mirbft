@@ -48,7 +48,7 @@ reuseFaulty=true  # If true, both correct and faulty peers will have the same ta
                   # the RandomSeed field).
 
 # Low-level system parameters
-loggingLevel="info"
+loggingLevel="debug"
 peerTag="peers"
 faultyPeerTag="faultyPeers"
 minConcurrentRequests=$((256 * 16384)) # Based on empirical data. At saturation, makes the throughput-latency plot nicely go up (as it is equivalent to may concurrent clients).
@@ -76,7 +76,7 @@ minBuckets="16"
 minEpochLength="256"       # [entries]
 nodeConnections="1"
 minConnections="16"
-leaderPolicies="Simple Single"  # Possible values:
+leaderPolicies="Simple"  # Possible values:
                          #     "Single": only one node in the leaderset. Simulates the single leader version of the protocols.
                          #     "Simple": all nodes in the leaderset
                          #     "Blacklist": faulty nodes are blacklisted, at least 2f+1 nodes in the leaderset

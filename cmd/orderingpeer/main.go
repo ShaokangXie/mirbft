@@ -102,12 +102,14 @@ func main() {
 	var mngr manager.Manager
 	var ord orderer.Orderer
 	var chkp checkpoint.Checkpointer
+	var exec *request.Executor
 	var rsp *request.Responder
 
 	// Instantiate component modules (with stubs).
 	mngr = setManager(config.Config.Manager)
 	ord = setOrderer(config.Config.Orderer)
 	chkp = setCheckpointer(config.Config.Checkpointer)
+	exec = request.NewExecutor()
 	rsp = request.NewResponder()
 
 	// Initialize modules.
@@ -163,6 +165,7 @@ func main() {
 	// The order of the calls must not matter, as they are all concurrent. If it does, it's a bug.
 	// By now all the modules must be initialized and ready to process messages.
 	// After starting, the modules will produce messages on their own.
+	go exec.Start(&wg)
 	go rsp.Start(&wg)
 	go chkp.Start(&wg)
 	go mngr.Start(&wg)

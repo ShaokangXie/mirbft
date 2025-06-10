@@ -19,11 +19,11 @@ import (
 	"encoding/gob"
 	"fmt"
 
-	"go.dedis.ch/kyber"
-	"go.dedis.ch/kyber/pairing/bn256"
-	"go.dedis.ch/kyber/share"
-	"go.dedis.ch/kyber/sign/bls"
-	"go.dedis.ch/kyber/sign/tbls"
+	"go.dedis.ch/kyber/v4"
+	"go.dedis.ch/kyber/v4/pairing/bn256"
+	"go.dedis.ch/kyber/v4/share"
+	"go.dedis.ch/kyber/v4/sign/bls"
+	"go.dedis.ch/kyber/v4/sign/tbls"
 )
 
 type TBLSPubKey struct {
