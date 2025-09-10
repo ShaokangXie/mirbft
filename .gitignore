@@ -9,3 +9,4 @@
 deployment-data
 
 protobufs/*.pb.go
+*.pb.go

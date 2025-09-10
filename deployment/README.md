@@ -20,6 +20,13 @@ Installs the required packages and the IBM Cloud CLI tools.<br/>
 Needs to be run only once on a machine.<br/>
 Only works with Ubuntu Linux.<br/>
 
+New local installation steps:
+
+1. go mod init github.com/hyperledger-labs/mirbft
+2. cd .. & ./run-protoc.sh
+3. go mod tidy
+
+
 ### Initialization
 
 Run `./scripts/setup/init.sh`

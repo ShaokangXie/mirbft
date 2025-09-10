@@ -17,52 +17,45 @@ sudo apt-get -y install \
 
 cd ~
 
-echo "Installing golang."
 
-wget https://storage.googleapis.com/golang/go1.17.2.linux-amd64.tar.gz
-tar xpzf go1.17.2.linux-amd64.tar.gz
-
-sudo mkdir -p /opt/gopath
-sudo chown -R  $user:$group /opt/gopath
-
-export PATH=$PATH:~/go/bin/:/opt/gopath/bin/
-export GOPATH=/opt/gopath
-export GOROOT=~/go
+export GOROOT=/usr/local/go
 export GOCACHE=~/.cache/go-build
 export GIT_SSL_NO_VERIFY=1
-export GO111MODULE=off
+export GO111MODULE=on
+export PATH=/usr/local/go/bin:$GOPATH/bin:$PATH
+export PATH="$PATH:$(go env GOPATH)/bin"
 
 cat << EOF >> ~/.bashrc
-export PATH=$PATH:~/go/bin/:/opt/gopath/bin/
-export GOPATH=/opt/gopath
-export GOROOT=~/go
+export GOROOT=/usr/local/go
 export GOCACHE=~/.cache/go-build
 export GIT_SSL_NO_VERIFY=1
-export GO111MODULE=off
+export GO111MODULE=on
+export PATH=/usr/local/go/bin:$GOPATH/bin:$PATH
+export PATH="$PATH:$(go env GOPATH)/bin"
 EOF
 
-echo "Installing golang packages. (May take a long time without producing output.)"
+# echo "Installing golang packages. (May take a long time without producing output.)"
 
-echo "Installing gRPC for Go."
-go get -u google.golang.org/grpc
+# echo "Installing gRPC for Go."
+# go install google.golang.org/grpc@latest
 
-echo "Installing Protobufs for Go."
-go get -u github.com/golang/protobuf/protoc-gen-go
+# echo "Installing Protobufs for Go."
+# go install github.com/golang/protobuf/protoc-gen-go
 
-echo "Installing Zerolog for Go."
-go get -u github.com/rs/zerolog/log
+# echo "Installing Zerolog for Go."
+# go install github.com/rs/zerolog/log@latest
 
-echo "Installing Linux Goprocinfo for Go"
-go get -u github.com/c9s/goprocinfo/linux
+# echo "Installing Linux Goprocinfo for Go"
+# go install github.com/c9s/goprocinfo/linux@latest
 
-echo "Installing Kyber for Go"
-go get -u go.dedis.ch/kyber
-go get go.dedis.ch/fixbuf
-go get golang.org/x/crypto/blake2b
+# echo "Installing Kyber for Go"
+# go install go.dedis.ch/kyber@latest
+# go install go.dedis.ch/fixbuf@latest
+# go install golang.org/x/crypto/blake2b@latest
 
-echo "Installing the YAML parser for Go"
-go get -u gopkg.in/yaml.v2
+# echo "Installing the YAML parser for Go"
+# go install gopkg.in/yaml.v2@latest
 
-echo "Installing bls"
-go get -u github.com/herumi/bls-eth-go-binary/bls
-cd $GOPATH/src/github.com/herumi/bls-eth-go-binary && make -j4
+# go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+# go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+# 让 protoc 能找到插件

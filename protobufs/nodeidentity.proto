@@ -1,6 +1,7 @@
 syntax = "proto3";
 
-option go_package = "./;protobufs";
+option go_package = "github.com/hyperledger-labs/mirbft/protobufs";
+
 
 package protobufs;
 
