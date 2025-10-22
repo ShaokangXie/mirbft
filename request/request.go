@@ -18,11 +18,12 @@ import (
 	"encoding/binary"
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
+	"github.com/golang/protobuf/proto"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
 	"github.com/hyperledger-labs/mirbft/membership"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
+	logger "github.com/rs/zerolog/log"
 )
 
 var (
@@ -87,7 +88,17 @@ func Init() {
 		requestInputChannels[i] = make(chan *pb.ClientRequest, config.Config.RequestInputChannelBuffer)
 		go func(i int) {
 			for req := range requestInputChannels[i] {
-				AddReqMsg(req)
+				for i := 0; i < int(req.RequestId.ClientReplication); i++ {
+					cloneReq := proto.Clone(req).(*pb.ClientRequest)
+					cloneReq.RequestId.ClientReplicationId = int32(i)
+					logger.Debug().Int32("clId", cloneReq.RequestId.ClientId).
+						Int32("clSn", cloneReq.RequestId.ClientSn).
+						Int32("clRepId", cloneReq.RequestId.ClientReplicationId).
+						Int32("clRep", cloneReq.RequestId.ClientReplication).
+						Msg("Handling replicated request.")
+					AddReqMsg(cloneReq)
+				}
+				// AddReqMsg(req)
 			}
 		}(i)
 	}
@@ -175,7 +186,7 @@ func AddReqMsg(reqMsg *pb.ClientRequest) *Request {
 		Digest:   Digest(reqMsg),
 		Buffer:   getBuffer(reqMsg.RequestId.ClientId),
 		Bucket:   getBucket(reqMsg),
-		Verified: true, // signature has not yet been verified / do not need
+		Verified: true,  // signature has not yet been verified / do not need
 		InFlight: false, // request has not yet been proposed (an identical one might have been, though, in which case we discard this request object)
 		Next:     nil,   // This request object is not part of a bucket list.
 		Prev:     nil,
@@ -301,13 +312,13 @@ func AdvanceWatermarks(entries []interface{}) { //expected type is []*log.Entry
 
 // Returns a bucket to which the request message belongs.
 func getBucket(req *pb.ClientRequest) *Bucket {
-	return Buckets[GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn)]
+	return Buckets[GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn, req.RequestId.ClientReplicationId)]
 }
 
 // This is the hash function that computes the bucket number of a request.
 // This implementation assigns requests from the same client to buckets in a round-robin way.
-func GetBucketNr(clID int32, clSN int32) int {
-	return int((clID + clSN) % int32(config.Config.NumBuckets))
+func GetBucketNr(clID int32, clSN int32, repID int32) int {
+	return int((clID + clSN + repID<<16) % int32(config.Config.NumBuckets))
 }
 
 // Returns the request buffer associated with a client ID.
@@ -353,7 +364,7 @@ func UglyUglyDummyRegisterRequest(reqMsg *pb.ClientRequest) *Request {
 
 // Return the hash of a protobuf client request message.
 func Digest(req *pb.ClientRequest) []byte {
-	buffer := make([]byte, 0, 4+4+len(req.Payload)+len(req.Pubkey))
+	buffer := make([]byte, 0, 4+4+4+len(req.Payload)+len(req.Pubkey))
 	id := RequestIDToBytes(req)
 	buffer = append(buffer, id...)
 	buffer = append(buffer, req.Payload...)
@@ -369,5 +380,8 @@ func RequestIDToBytes(req *pb.ClientRequest) []byte {
 	id := make([]byte, 4)
 	binary.LittleEndian.PutUint32(id, uint32(req.RequestId.ClientId))
 	buffer = append(buffer, id...)
+	repid := make([]byte, 4)
+	binary.LittleEndian.PutUint32(repid, uint32(req.RequestId.ClientReplicationId))
+	buffer = append(buffer, repid...)
 	return buffer
 }

@@ -142,11 +142,13 @@ func (x *ClientResponse) GetOrderSn() int32 {
 }
 
 type RequestID struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ClientId      int32                  `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	ClientSn      int32                  `protobuf:"varint,2,opt,name=client_sn,json=clientSn,proto3" json:"client_sn,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ClientId            int32                  `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientSn            int32                  `protobuf:"varint,2,opt,name=client_sn,json=clientSn,proto3" json:"client_sn,omitempty"`
+	ClientReplication   int32                  `protobuf:"varint,3,opt,name=client_replication,json=clientReplication,proto3" json:"client_replication,omitempty"`
+	ClientReplicationId int32                  `protobuf:"varint,4,opt,name=client_replication_id,json=clientReplicationId,proto3" json:"client_replication_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *RequestID) Reset() {
@@ -189,6 +191,20 @@ func (x *RequestID) GetClientId() int32 {
 func (x *RequestID) GetClientSn() int32 {
 	if x != nil {
 		return x.ClientSn
+	}
+	return 0
+}
+
+func (x *RequestID) GetClientReplication() int32 {
+	if x != nil {
+		return x.ClientReplication
+	}
+	return 0
+}
+
+func (x *RequestID) GetClientReplicationId() int32 {
+	if x != nil {
+		return x.ClientReplicationId
 	}
 	return 0
 }
@@ -526,10 +542,12 @@ const file_request_proto_rawDesc = "" +
 	"\tsignature\x18\x04 \x01(\fR\tsignature\"H\n" +
 	"\x0eClientResponse\x12\x1b\n" +
 	"\tclient_sn\x18\x01 \x01(\x05R\bclientSn\x12\x19\n" +
-	"\border_sn\x18\x02 \x01(\x05R\aorderSn\"E\n" +
+	"\border_sn\x18\x02 \x01(\x05R\aorderSn\"\xa8\x01\n" +
 	"\tRequestID\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\x05R\bclientId\x12\x1b\n" +
-	"\tclient_sn\x18\x02 \x01(\x05R\bclientSn\"=\n" +
+	"\tclient_sn\x18\x02 \x01(\x05R\bclientSn\x12-\n" +
+	"\x12client_replication\x18\x03 \x01(\x05R\x11clientReplication\x122\n" +
+	"\x15client_replication_id\x18\x04 \x01(\x05R\x13clientReplicationId\"=\n" +
 	"\x05Batch\x124\n" +
 	"\brequests\x18\x01 \x03(\v2\x18.protobufs.ClientRequestR\brequests\"N\n" +
 	"\x13MissingEntryRequest\x12\x0e\n" +

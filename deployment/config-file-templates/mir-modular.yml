@@ -60,7 +60,7 @@ EpochLength: EPOCH # Determines the length of the epoch, if SegmentLength is not
 SegmentLength: SEGMENTLENGTH # Number of sequence numbers in a segment.
                              # Overrides EpochLength, which may vary depending on the number of leaders.
                              # If set to 0, epoch length remains constant (EpochLength).
-WaitForCheckpoints: true  # Wait for a stable checkpoint of an epoch before starting a new epoch.
+WaitForCheckpoints: false # Wait for a stable checkpoint of an epoch before starting a new epoch.
                           # This keeps the peers more in sync for the price of waiting longer between epochs.
 
 # Request Buffer Configuration

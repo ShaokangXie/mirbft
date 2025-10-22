@@ -45,7 +45,7 @@ failureCounts=(0) # For each system size, the corresponding failure count (on to
 fixBatchRate=true
 networkInterface="lo"
 
-StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')
 privKeyNumEachPeer=(10) # Using as buffer for lagged instance
 UseSig=(false)
 
@@ -71,7 +71,7 @@ throughputCap=131072000     # The system will always be proposing requests at a 
 
 # System composition
 orderers="Pbft"             # Possible values: Pbft HotStuff Raft Dummy
-checkpointers="Signing"
+checkpointers="Simple"
 
 # Parameters chosen for experiments
 durations="60"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
@@ -121,7 +121,7 @@ function skip() {
 
 throughputsAuthPbft=$()
 # throughputsAuthPbft[4]="105000 110000 115000 120000"
-throughputsAuthPbft[4]="1024 2048 4096"
+throughputsAuthPbft[4]="1024"
 throughputsAuthPbft[8]=""
 throughputsAuthPbft[16]=""
 throughputsAuthPbft[32]=""

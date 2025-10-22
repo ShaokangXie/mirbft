@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
 	"github.com/hyperledger-labs/mirbft/discovery"
@@ -19,6 +17,8 @@ import (
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/request"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 )
 
@@ -109,6 +109,8 @@ type client struct {
 	// Same as with logging, each client has a separate trace that is output in a separate file,
 	// even if multiple clients are running in the same process.
 	trace tracing.Trace
+
+	stopNow int32
 }
 
 // Allocates and returns a pointer to a new client.
@@ -206,8 +208,9 @@ func (c *client) createRequest(seqNr int32) *pb.ClientRequest {
 	// Create request message.
 	req := &pb.ClientRequest{
 		RequestId: &pb.RequestID{
-			ClientId: c.ownClientID,
-			ClientSn: seqNr,
+			ClientId:          c.ownClientID,
+			ClientSn:          seqNr,
+			ClientReplication: 5,
 		},
 		Payload:   randomRequestPayload,
 		Signature: nil,
@@ -236,8 +239,8 @@ func (c *client) Run(wg *sync.WaitGroup) {
 	var ordererIDs []int32
 	if config.Config.LeaderPolicy == "SimulatedRandomFailures" {
 		ordererIDs = manager.NewLeaderPolicy(config.Config.LeaderPolicy).GetLeaders(0)
-	//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
-	//	ordererIDs = membership.CorrectPeers()
+		//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
+		//	ordererIDs = membership.CorrectPeers()
 	} else {
 		ordererIDs = membership.AllNodeIDs()
 	}
@@ -314,13 +317,17 @@ func (c *client) Run(wg *sync.WaitGroup) {
 		// Wait for enough responses for all requests
 		// We the number of in-flight requests every second until their number is 0.
 		// TODO: This is a dummy ugly implementation, make it nicer.
-		c.Lock()
-		for len(c.submittedTo) > 0 {
-			c.Unlock()
-			time.Sleep(time.Second)
+		for {
 			c.Lock()
+			pending := len(c.submittedTo)
+			c.Unlock()
+
+			// c.log.Info().Int32("len", int32(pending)).Msg("Waiting for all responses.")
+			if pending == 0 || atomic.LoadInt32(&c.stopNow) == 1 {
+				break
+			}
+			time.Sleep(time.Second)
 		}
-		c.Unlock()
 
 		// Stop response handlers and wait for them.
 		for peerID, conn := range reqConns {
@@ -625,6 +632,11 @@ func (c *client) resubmitPendingRequests() {
 		Int32("epoch", c.epoch).
 		Msg("Resubmitted Requests.")
 
+	// If no requests were resubmitted, it means all requests are finished, so we can stop the client.
+	if resubmitted == 0 && c.epoch > 0 {
+		// c.log.Info().Msg("All requests finished after bucket reassignment, stopping client.")
+		atomic.StoreInt32(&c.stopNow, 1)
+	}
 }
 
 // Returns a bucket assignment for an epoch if it is ready, nil otherwise.
@@ -649,7 +661,7 @@ func (c *client) newBucketsReady(epoch int32) *pb.BucketAssignment {
 func (c *client) guessTargetOrderers(req *pb.ClientRequest) []int32 {
 
 	guess := make([]int32, reqFanout, reqFanout)
-	b := request.GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn)
+	b := request.GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn, req.RequestId.ClientReplicationId)
 
 	for i := 0; i < reqFanout; i++ {
 		guess[i] = c.currentBucketAssignment[b]

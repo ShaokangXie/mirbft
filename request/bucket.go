@@ -19,10 +19,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Represents a single bucket of client requests.
@@ -82,6 +82,19 @@ func (b *Bucket) Len() int {
 	return b.numRequests
 }
 
+func makeKey(clID, clSN, repID int32) int64 {
+	return (int64(uint64(uint32(clID))) << 48) |
+		(int64(uint64(uint16(clSN))) << 16) |
+		int64(uint64(uint16(repID)))
+}
+
+func splitKey(k int64) (clID, clSN, repID int32) {
+	clID = int32(uint64(k) >> 48)
+	clSN = int32((uint64(k) >> 16) & 0xFFFF)
+	repID = int32(uint64(k) & 0xFFFF)
+	return
+}
+
 // Wrapper for addNoLock() that acquires the bucket lock.
 func (b *Bucket) AddRequest(req *Request) (*Request, bool) {
 	b.Lock()
@@ -137,7 +150,8 @@ func (b *Bucket) addNoLock(newReq *Request) (*Request, bool) {
 	//}{reqMsg.RequestId.ClientId, reqMsg.RequestId.ClientSn}
 	clID := newReq.Msg.RequestId.ClientId
 	clSN := newReq.Msg.RequestId.ClientSn
-	reqID := int64(clID)<<32 + int64(clSN)
+	clRepID := newReq.Msg.RequestId.ClientReplicationId
+	reqID := makeKey(clID, clSN, clRepID)
 
 	// Look up request (in the bucket)
 	oldReq, ok := b.reqIndex[reqID]
@@ -251,11 +265,46 @@ func (b *Bucket) append(r *Request) {
 func (b *Bucket) Prepend(req *Request) {
 	b.Lock()
 	defer b.Unlock()
+	// 1) 校验这条请求理论上应该落在哪个 bucket（rep 字段必须与索引一致）
+	exp := GetBucketNr(req.Msg.RequestId.ClientId,
+		req.Msg.RequestId.ClientSn,
+		req.Msg.RequestId.ClientReplicationId)
+	if exp != b.id {
+		logger.Error().
+			Int("bucketId", b.id).
+			Int("expectedBucket", exp).
+			Int32("clId", req.Msg.RequestId.ClientId).
+			Int32("clSn", req.Msg.RequestId.ClientSn).
+			Int32("clRepId", req.Msg.RequestId.ClientReplicationId).
+			Msg("Prepend on wrong bucket; skip to avoid corruption.")
+		return
+	}
 
-	// Sanity check: The request must already be present in the bucket's index
-	reqID := int64(req.Msg.RequestId.ClientId)<<32 + int64(req.Msg.RequestId.ClientSn)
+	reqID := makeKey(req.Msg.RequestId.ClientId,
+		req.Msg.RequestId.ClientSn,
+		req.Msg.RequestId.ClientReplicationId)
+
+	// 2) 索引不存在就补一条，不再 panic
 	if _, ok := b.reqIndex[reqID]; !ok {
-		panic("Trying to re-insert (prepend) request that is not in the index.")
+		// —— 这里顺便打印同一 (clID,clSN) 其它 repId 是否存在，诊断“repId 对不上”的问题
+		for rid := int32(0); rid < 8; rid++ { // 8 只是示例，如果你知道最大副本数就用那个
+			k := makeKey(req.Msg.RequestId.ClientId, req.Msg.RequestId.ClientSn, rid)
+			if _, ok := b.reqIndex[k]; ok {
+				logger.Warn().
+					Int("bucketId", b.id).
+					Int32("clId", req.Msg.RequestId.ClientId).
+					Int32("clSn", req.Msg.RequestId.ClientSn).
+					Int32("clRepIdPresent", rid).
+					Msg("Prepend: sibling repId key exists while target key missing")
+			}
+		}
+		logger.Warn().
+			Int("bucketId", b.id).
+			Int32("clId", req.Msg.RequestId.ClientId).
+			Int32("clSn", req.Msg.RequestId.ClientSn).
+			Int32("clRepId", req.Msg.RequestId.ClientReplicationId).
+			Msg("Prepend: index missing; re-adding key and continuing.")
+		b.reqIndex[reqID] = req
 	}
 
 	// Only prepend request if it is not already inserted in the list
@@ -348,10 +397,12 @@ func (b *Bucket) Remove(reqs []*Request) {
 
 // Removes a request from the bucket without acquiring the bucket lock.
 // ATTENTION: Does not (and must not) remove the request from the index.
-//            The index can be cleaned up only after the client watermarks have been updated,
-//            to prevent the situation where, in the same epoch, a request is received from a leader,
-//            added to the bucket, committed and removed from the bucket, and then added again after a late reception
-//            from the client.
+//
+//	The index can be cleaned up only after the client watermarks have been updated,
+//	to prevent the situation where, in the same epoch, a request is received from a leader,
+//	added to the bucket, committed and removed from the bucket, and then added again after a late reception
+//	from the client.
+//
 // ATTENTION: Bucket must be LOCKED when calling this method.
 func (b *Bucket) removeNoLock(req *Request) {
 
@@ -362,6 +413,7 @@ func (b *Bucket) removeNoLock(req *Request) {
 	//}{req.Msg.RequestId.ClientId, req.Msg.RequestId.ClientSn}
 	clID := req.Msg.RequestId.ClientId
 	clSN := req.Msg.RequestId.ClientSn
+	clRepID := req.Msg.RequestId.ClientReplicationId
 
 	// Do not remove requests if they are not in the bucket
 	// (Note that the Prev and Next fields need to be consistently set to nil on request removal for this to work.)
@@ -369,6 +421,7 @@ func (b *Bucket) removeNoLock(req *Request) {
 		logger.Trace().Int("bucketId", b.id).
 			Int32("clId", clID).
 			Int32("clSn", clSN).
+			Int32("clRepId", clRepID).
 			Msg("Not removing request. Request not in bucket.")
 		return
 	}
@@ -378,6 +431,7 @@ func (b *Bucket) removeNoLock(req *Request) {
 		Int("len", b.Len()).
 		Int32("clId", clID).
 		Int32("clSn", clSN).
+		Int32("clRepId", clRepID).
 		Msg("Removing request from bucket.")
 
 	// Remove request from the doubly linked list of requests.
@@ -404,26 +458,64 @@ func (b *Bucket) removeNoLock(req *Request) {
 // This is only safe to do when the client watermarks for the corresponding epoch have been advanced.
 // (See removeNoLock())
 // Decrements the given wait group when done.
-func (b *Bucket) PruneIndex(watermarks *sync.Map) { // expected map type of watermarks: map[int32]watermarkRange
+func (b *Bucket) PruneIndex(watermarks *sync.Map) {
 	b.Lock()
 	defer b.Unlock()
 
-	// The keys of the map correspond to client IDs and the corresponding values are the watermarkRange structs
-	// containing the old and the new watermark just updated in the Buffers.
-	// All request SNs between the old (including) and the new (excluding) watermark can safely be pruned.
-	watermarks.Range(func(clID interface{}, wmRange interface{}) bool {
-		for clSN := wmRange.(watermarkRange).oldWM; clSN < wmRange.(watermarkRange).newWM; clSN++ {
-			if GetBucketNr(clID.(int32), clSN) == b.id {
-
-				reqID := int64(clID.(int32))<<32 + int64(clSN)
-				delete(b.reqIndex, reqID)
+	type wm struct{ old, new int32 }
+	wmByClient := make(map[int32]wm, 128)
+	watermarks.Range(func(k, v any) bool {
+		if clID, ok1 := k.(int32); ok1 {
+			if rng, ok2 := v.(watermarkRange); ok2 {
+				wmByClient[clID] = wm{old: rng.oldWM, new: rng.newWM}
 			}
 		}
 		return true
 	})
 
+	removedIdx := 0
+	removedList := 0
+
+	for key, r := range b.reqIndex {
+		clID, clSN, repID := splitKey(key)
+
+		if r == nil {
+			logger.Error().Int("bucketId", b.id).Int64("key", key).
+				Msg("PruneIndex: nil request pointer; skipping")
+			continue
+		}
+		// ★ 任何在飞中的请求（无论哪个 repID）一律跳过
+		if r.InFlight {
+			continue
+		}
+
+		rng, ok := wmByClient[clID]
+		if !ok || clSN < rng.old || clSN >= rng.new {
+			continue
+		}
+
+		// 避免误删其它桶的 key（你的分桶包含 repID 的话，这里必须一致）
+		if GetBucketNr(clID, clSN, repID) != b.id {
+			continue
+		}
+
+		// ★ 如果这个请求仍挂在当前桶的链表里，先把它摘掉
+		if r == b.FirstRequest || r.Prev != nil || r.Next != nil {
+			b.removeNoLock(r) // 会维护 Prev/Next/numRequests
+			removedList++
+		}
+
+		delete(b.reqIndex, key)
+		removedIdx++
+	}
+
 	tracing.MainTrace.Event(tracing.BUCKET_STATE, int64(b.GetId()), int64(b.Len()))
-	logger.Debug().Int("bucketId", b.id).Int("reqLeft", b.Len()).Msg("Pruned Bucket index.")
+	logger.Debug().
+		Int("bucketId", b.id).
+		Int("removedIdx", removedIdx).
+		Int("removedFromList", removedList).
+		Int("reqLeft", b.Len()).
+		Msg("Pruned Bucket index and list.")
 }
 
 // TODO: Remove these debug functions.

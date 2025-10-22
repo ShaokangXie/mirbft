@@ -17,11 +17,11 @@ package checkpoint
 import (
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/log"
 	"github.com/hyperledger-labs/mirbft/manager"
 	"github.com/hyperledger-labs/mirbft/membership"
 	"github.com/hyperledger-labs/mirbft/messenger"
+	logger "github.com/rs/zerolog/log"
 
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 )
@@ -43,6 +43,7 @@ type SimpleCheckpointer struct {
 
 // Returns a new initialized SimpleCheckpointer.
 func NewSimpleCheckpointer() *SimpleCheckpointer {
+	logger.Info().Msg("Using SimpleCheckpointer.")
 	return &SimpleCheckpointer{
 		pendingCheckpoints: make(map[int32]map[int32]bool),
 		messageSerializer:  make(chan *receivedMessage, messageSerializerBuffer),

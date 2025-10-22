@@ -78,7 +78,7 @@ EpochLength: 64             # Determines the length of the epoch, if SegmentLeng
 SegmentLength: 0            # Number of sequence numbers in a segment.
                             # Overrides EpochLength, which may vary depending on the number of leaders.
                             # If set to 0, epoch length remains constant (EpochLength).
-WaitForCheckpoints: true    # Wait for a stable checkpoint of an epoch before starting a new epoch.
+WaitForCheckpoints: false   # Wait for a stable checkpoint of an epoch before starting a new epoch.
                             # This keeps the peers more in sync for the price of waiting longer between epochs.
 
 # Request Buffer Configuration
@@ -130,7 +130,7 @@ PrecomputeRequests: true    # Pre-compute (and sign, if applicable) all requests
 RequestHandlerThreads: 16       # Number of threads that write incoming requests to request Buffers.
                                 # To avoid cache contention, this number should not be higher than
                                 # the number of physical cores of the machine running the peer.
-RequestInputChannelBuffer: 1024 # Buffer size of the channels to which gPRC threads are writing requests and from which
+RequestInputChannelBuffer: 8192 # Buffer size of the channels to which gPRC threads are writing requests and from which
                                 # request handler threads are reading.
 
 BatchVerifier: sequential       # Determines how the requests in a batch are verified.

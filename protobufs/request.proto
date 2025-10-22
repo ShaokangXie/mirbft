@@ -20,6 +20,8 @@ message ClientResponse {
 message RequestID {
     int32 client_id = 1;
     int32 client_sn = 2;
+    int32 client_replication = 3;
+    int32 client_replication_id = 4;
 }
 
 message Batch {

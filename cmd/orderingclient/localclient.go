@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 )
 
 type LocalClient struct {
@@ -114,8 +114,9 @@ func (c *LocalClient) submitRequest(seqNr int32) {
 	// Create request message.
 	req := &pb.ClientRequest{
 		RequestId: &pb.RequestID{
-			ClientId: c.ownClientID,
-			ClientSn: seqNr,
+			ClientId:          c.ownClientID,
+			ClientSn:          seqNr,
+			ClientReplication: 5,
 		},
 		Payload:   randomRequestPayload,
 		Signature: nil,

@@ -256,7 +256,7 @@ func (pi *pbftInstance) lead() {
 	// Simulate a straggler.
 	if membership.SimulatedStraggler[membership.OwnID] == 1 && config.Config.CrashTiming == "Straggler" {
 		if byzantineDelay == -1 {
-			byzantineDelay = 10 * config.Config.BatchTimeoutMs
+			byzantineDelay = 100 * config.Config.BatchTimeoutMs
 		}
 		config.Config.BatchTimeoutMs = byzantineDelay
 		config.Config.BatchTimeout = time.Duration(config.Config.BatchTimeoutMs) * time.Millisecond

@@ -17,11 +17,11 @@ package request
 import (
 	"sync"
 
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/log"
 	"github.com/hyperledger-labs/mirbft/messenger"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Represents a responder to client requests
@@ -38,7 +38,8 @@ type Responder struct {
 // the responder has been created).
 func NewResponder() *Responder {
 	return &Responder{
-		entriesChan: log.Entries(),
+		// entriesChan: log.Entries(),
+		entriesChan: log.FinalizedEntries(),
 	}
 }
 
