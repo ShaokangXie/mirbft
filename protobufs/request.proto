@@ -10,6 +10,12 @@ message ClientRequest {
     bytes payload = 2;
     bytes pubkey = 3;
     bytes signature = 4;
+    repeated BalanceDelta deltas = 5;
+}
+
+message BalanceDelta {
+  int32  user_id      = 1;
+  double amount_delta = 2;
 }
 
 message ClientResponse {

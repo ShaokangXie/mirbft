@@ -266,9 +266,7 @@ func (b *Bucket) Prepend(req *Request) {
 	b.Lock()
 	defer b.Unlock()
 	// 1) 校验这条请求理论上应该落在哪个 bucket（rep 字段必须与索引一致）
-	exp := GetBucketNr(req.Msg.RequestId.ClientId,
-		req.Msg.RequestId.ClientSn,
-		req.Msg.RequestId.ClientReplicationId)
+	exp := GetBucketNr(req.Msg.Deltas[req.Msg.RequestId.ClientReplicationId].UserId)
 	if exp != b.id {
 		logger.Error().
 			Int("bucketId", b.id).
@@ -477,7 +475,7 @@ func (b *Bucket) PruneIndex(watermarks *sync.Map) {
 	removedList := 0
 
 	for key, r := range b.reqIndex {
-		clID, clSN, repID := splitKey(key)
+		clID, clSN, _ := splitKey(key)
 
 		if r == nil {
 			logger.Error().Int("bucketId", b.id).Int64("key", key).
@@ -495,7 +493,7 @@ func (b *Bucket) PruneIndex(watermarks *sync.Map) {
 		}
 
 		// 避免误删其它桶的 key（你的分桶包含 repID 的话，这里必须一致）
-		if GetBucketNr(clID, clSN, repID) != b.id {
+		if GetBucketNr(r.Msg.Deltas[r.Msg.RequestId.ClientReplicationId].UserId) != b.id {
 			continue
 		}
 

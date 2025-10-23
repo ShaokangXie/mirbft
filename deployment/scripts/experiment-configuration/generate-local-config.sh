@@ -42,7 +42,7 @@ clients16=""    # deploys 16 client machine which run the specified number of cl
 clients32=""    # deploys 32 client machine which run the specified number of client instances
 systemSizes="4" # Must be sorted in ascending order!
 failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
-fixBatchRate=true
+fixBatchRate=false
 networkInterface="lo"
 
 StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')

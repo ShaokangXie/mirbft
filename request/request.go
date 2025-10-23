@@ -312,13 +312,26 @@ func AdvanceWatermarks(entries []interface{}) { //expected type is []*log.Entry
 
 // Returns a bucket to which the request message belongs.
 func getBucket(req *pb.ClientRequest) *Bucket {
-	return Buckets[GetBucketNr(req.RequestId.ClientId, req.RequestId.ClientSn, req.RequestId.ClientReplicationId)]
+	return Buckets[GetBucketNr(req.Deltas[req.RequestId.ClientReplicationId].UserId)]
 }
 
 // This is the hash function that computes the bucket number of a request.
 // This implementation assigns requests from the same client to buckets in a round-robin way.
-func GetBucketNr(clID int32, clSN int32, repID int32) int {
-	return int((clID + clSN + repID<<16) % int32(config.Config.NumBuckets))
+//
+//	func GetBucketNr(clID int32, clSN int32, repID int32) int {
+//		return int((clID + clSN + repID<<16) % int32(config.Config.NumBuckets))
+//	}
+func GetBucketNr(userID int32) int {
+	return int(hash32(uint32(userID)) % uint32(config.Config.NumBuckets))
+}
+
+func hash32(x uint32) uint32 {
+	x = (x ^ 61) ^ (x >> 16)
+	x = x + (x << 3)
+	x = x ^ (x >> 4)
+	x = x * 0x27d4eb2d
+	x = x ^ (x >> 15)
+	return x
 }
 
 // Returns the request buffer associated with a client ID.

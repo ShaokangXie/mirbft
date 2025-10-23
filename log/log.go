@@ -19,6 +19,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"sync"
+	"time"
 
 	"github.com/hyperledger-labs/mirbft/account"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
@@ -76,14 +77,23 @@ var (
 	// Guards checkpoint and checkpointSubscribers variables
 	checkpointLock = sync.Mutex{}
 
+	// ---- per-tx replica tracking ----
 	txMu        sync.Mutex
 	txPending   = make(map[txKey]*repSet)  // 未收齐的逻辑事务
 	txFinalized = make(map[txKey]struct{}) // 已完成的逻辑事务（防重复发布）
 
+	// ---- finalized dispatch ----
 	finalizedSubs     = make([]chan *Entry, 0)
 	finalizedSubsLock sync.Mutex
+	finalizedQueue    chan *Entry
 
-	finalizedQueue chan *Entry
+	// ---- 并发提交管线（合并 + worker 池）----
+	commitInitOnce   sync.Once
+	commitInCh       chan []*pb.ClientRequest        // 每个 entry 的批次
+	commitExecCh     chan []*pb.ClientRequest        // 合并后的批次，交给执行 worker
+	commitWorkerN    = max(2, runtime.NumCPU())      // 提交执行 worker 数
+	commitMaxBatch   = 16_384                        // 合并后的最大请求数
+	commitCoalesceNS = int64(200 * time.Microsecond) // 合并窗口
 )
 
 // 逻辑事务键：(client_id, client_sn)
@@ -118,9 +128,7 @@ func CommitEntry(entry *Entry) {
 	logger.Info().
 		Int32("sn", entry.Sn).
 		Int("nReq", len(entry.Batch.Requests)).
-		//Time("proposed", time.Unix(0, entry.ProposeTs)).
-		//Time("committed", time.Unix(0, entry.CommitTs)).
-		Int64("latency", (entry.CommitTs-entry.CommitTs)/1000000).
+		Int64("latency", (entry.CommitTs-entry.ProposeTs)/1000000).
 		Msg("Committed entry.")
 
 	entryPublishLock.Lock()
@@ -128,101 +136,101 @@ func CommitEntry(entry *Entry) {
 	entryPublishLock.Unlock()
 
 	go func() {
+		// 旧逻辑（按 sn 顺序全局发布）
+		publishEntries()
 
-		// TODO: add the execution here.
-		account.CommitEntry(entry.Batch.Requests)
-
-		// 新逻辑：逐个标记该 entry 内请求的副本到达；收齐即 finalize
-		if entry.Batch != nil {
-			for _, cr := range entry.Batch.Requests {
-				markReplicaAndMaybeFinalize(cr, entry.Sn)
-			}
+		// 交给并发提交管线（跨 entry 合并 + worker 并行）
+		if entry.Batch != nil && len(entry.Batch.Requests) > 0 {
+			enqueueCommit(entry.Batch.Requests)
 		}
 
-		// 旧逻辑（按 sn 顺序全局发布）不再需要：
-		publishEntries()
+		// 批量 finalize（一次加锁，减少开销）
+		if entry.Batch != nil && len(entry.Batch.Requests) > 0 {
+			markReplicasAndMaybeFinalizeBatch(entry.Batch.Requests, entry.Sn)
+		}
 	}()
 }
 
-// 标记一个副本已到达；若收齐则发布“最终确认”
-func markReplicaAndMaybeFinalize(cr *pb.ClientRequest, sn int32) {
+// 批量标记副本到达；对收齐的 tx 生成 finalize Entry 入队
+func markReplicasAndMaybeFinalizeBatch(crs []*pb.ClientRequest, sn int32) {
 	txMu.Lock()
-	defer txMu.Unlock()
 
-	logger.Debug().
-		Int32("clId", cr.RequestId.ClientId).
-		Int32("clSn", cr.RequestId.ClientSn).
-		Int32("replicationId", cr.RequestId.ClientReplication).
-		Int32("replication", cr.RequestId.ClientReplicationId).
-		Int32("entrySn", sn).
-		Msg("Marking replica as arrived.")
+	type finItem struct {
+		sample *pb.ClientRequest
+		minSN  int32
+	}
+	finished := make([]finItem, 0, 64)
 
-	rid := cr.RequestId
-	key := txKey{ClientID: rid.ClientId, ClientSn: rid.ClientSn}
+	for _, cr := range crs {
+		if cr == nil || cr.RequestId == nil {
+			continue
+		}
+		rid := cr.RequestId
+		key := txKey{ClientID: rid.ClientId, ClientSn: rid.ClientSn}
 
-	if _, done := txFinalized[key]; done {
-		return
+		if _, done := txFinalized[key]; done {
+			continue
+		}
+
+		rs, ok := txPending[key]
+		if !ok {
+			rs = &repSet{
+				total:  rid.ClientReplication,
+				mask:   0,
+				sample: cr,
+				minSN:  sn,
+			}
+			txPending[key] = rs
+		} else {
+			if rid.ClientReplication > rs.total {
+				rs.total = rid.ClientReplication
+			}
+			if sn < rs.minSN {
+				rs.minSN = sn
+			}
+			if rs.sample == nil || rid.ClientReplicationId < rs.sample.RequestId.ClientReplicationId {
+				rs.sample = cr
+			}
+		}
+
+		if rid.ClientReplicationId >= 0 && rid.ClientReplicationId < 64 {
+			rs.mask |= (1 << uint(rid.ClientReplicationId))
+		} else {
+			logger.Warn().
+				Int32("client_id", rid.ClientId).
+				Int32("client_sn", rid.ClientSn).
+				Int32("replication_id", rid.ClientReplicationId).
+				Msg("replication_id >= 64, unexpected under bitset scheme.")
+		}
+
+		if rs.total > 0 && bits.OnesCount64(rs.mask) >= int(rs.total) {
+			sample, minSN := rs.sample, rs.minSN
+			delete(txPending, key)
+			txFinalized[key] = struct{}{}
+			finished = append(finished, finItem{sample: sample, minSN: minSN})
+		}
 	}
 
-	rs, ok := txPending[key]
-	if !ok {
-		rs = &repSet{
-			total:  rid.ClientReplication,
-			mask:   0,
-			sample: cr,
-			minSN:  sn, // 初始化为首次出现的 sn
-		}
-		txPending[key] = rs
-	} else {
-		if rid.ClientReplication > rs.total {
-			rs.total = rid.ClientReplication
-		}
-		if sn < rs.minSN {
-			rs.minSN = sn // 始终保留最早的 sn
-		}
-		if rs.sample == nil || rid.ClientReplicationId < rs.sample.RequestId.ClientReplicationId {
-			rs.sample = cr
-		}
-	}
+	txMu.Unlock()
 
-	if rid.ClientReplicationId >= 0 && rid.ClientReplicationId < 64 {
-		rs.mask |= (1 << uint(rid.ClientReplicationId))
-	} else {
-		logger.Warn().
-			Int32("client_id", rid.ClientId).
-			Int32("client_sn", rid.ClientSn).
-			Int32("replication_id", rid.ClientReplicationId).
-			Msg("replication_id >= 64, unexpected under bitset scheme.")
-	}
-
-	complete := (rs.total > 0 && bits.OnesCount64(rs.mask) >= int(rs.total))
-	if complete {
-		sample := rs.sample
-		minSN := rs.minSN
-		delete(txPending, key)
-		txFinalized[key] = struct{}{}
-
+	// 出锁后统一入队，避免在持锁期间阻塞
+	for _, it := range finished {
 		fin := &Entry{
-			Sn:    minSN, // 用最早出现的 sn 作为“最终确认”的锚点
-			Batch: &pb.Batch{Requests: []*pb.ClientRequest{sample}},
+			Sn:    it.minSN,
+			Batch: &pb.Batch{Requests: []*pb.ClientRequest{it.sample}},
 		}
-
 		select {
 		case finalizedQueue <- fin:
 		default:
-			// 队列本身都满了：可以阻塞等待（稳妥），或者丢弃（激进）
-			logger.Warn().Msg("finalizedQueue full; blocking")
+			logger.Warn().Int32("sn", fin.Sn).Msg("finalizedQueue full; blocking")
 			finalizedQueue <- fin
 		}
-
 		logger.Debug().
-			Int32("client_id", sample.RequestId.ClientId).
-			Int32("client_sn", sample.RequestId.ClientSn).
-			Int32("replication", sample.RequestId.ClientReplication).
-			Msg("Finalized transaction after all replicas committed (out-of-order).")
-		return
+			Int32("client_id", it.sample.RequestId.ClientId).
+			Int32("client_sn", it.sample.RequestId.ClientSn).
+			Int32("replication", it.sample.RequestId.ClientReplication).
+			Msg("Finalized transaction after all replicas committed (batched).")
 	}
-
 }
 
 // Retrieve Entry with sequence number sn.
@@ -374,9 +382,7 @@ func Checkpoints() chan *pb.StableCheckpoint {
 
 // Pushes committed entries to the subscribers, if any.
 func publishEntries() {
-	// The lock is necessary for potential concurrent subscribers calling Entries, but mainly for concurrent threads
-	// entering publishEntries() from CommitEntry() and potentially reading the same firstEmptySN, making them push
-	// the same Entry to the subscribers more than once.
+	// The lock is necessary for potential concurrent subscribers.
 	entryPublishLock.Lock()
 	defer entryPublishLock.Unlock()
 
@@ -427,15 +433,10 @@ func publishEntry(e *Entry, subscribers []chan *Entry) {
 }
 
 func FreeOldEntries(snStart int32, snEnd int32) {
-	// for i := snStart; i <= snEnd; i++ {
-	// 	entries.Delete(i)
-	// }
-
 	entries.Range(func(key, value interface{}) bool {
 		entries.Delete(key)
 		return true
 	})
-	// entries = nil
 	entries = sync.Map{}
 	for i := 0; i < 3; i++ {
 		runtime.GC()
@@ -448,6 +449,56 @@ func init() {
 	go finalizedDispatcher()
 }
 
+// ---- 并发提交管线 ----
+
+func initCommitPipeline() {
+	commitInCh = make(chan []*pb.ClientRequest, 4096)
+	commitExecCh = make(chan []*pb.ClientRequest, 1024)
+
+	// 合并器：把短时间内多个 entry 的批次合并为更大的批次
+	go func() {
+		for first := range commitInCh {
+			buf := make([]*pb.ClientRequest, 0, len(first)*2)
+			buf = append(buf, first...)
+
+			deadline := time.Now().UnixNano() + commitCoalesceNS
+			for len(buf) < commitMaxBatch {
+				select {
+				case more := <-commitInCh:
+					buf = append(buf, more...)
+					if time.Now().UnixNano() >= deadline {
+						goto FLUSH
+					}
+				default:
+					if time.Now().UnixNano() < deadline {
+						time.Sleep(20 * time.Microsecond)
+						continue
+					}
+					goto FLUSH
+				}
+			}
+		FLUSH:
+			commitExecCh <- buf
+		}
+	}()
+
+	// 执行 worker 池：并行执行 account.CommitEntry
+	for i := 0; i < commitWorkerN; i++ {
+		go func() {
+			for batch := range commitExecCh {
+				account.CommitEntry(batch)
+			}
+		}()
+	}
+}
+
+func enqueueCommit(reqs []*pb.ClientRequest) {
+	commitInitOnce.Do(initCommitPipeline)
+	commitInCh <- reqs // 背压即可，避免丢弃
+}
+
+// ---- finalized 分发 ----
+
 func finalizedDispatcher() {
 	for e := range finalizedQueue {
 		finalizedSubsLock.Lock()
@@ -455,15 +506,8 @@ func finalizedDispatcher() {
 			select {
 			case sub <- e:
 			default:
-				// 订阅者太慢：这里有三种策略，任选其一
-				// 1) 阻塞等它：最简单但可能反压到 dispatcher（仍不影响 CommitEntry）
-				// sub <- e
-
-				// 2) 丢弃并告警（推荐，用计数器/metrics）：
+				// 订阅者太慢：丢弃并告警（不回压提交与共识）
 				logger.Warn().Int32("sn", e.Sn).Msg("finalized subscriber is slow; dropping one entry")
-				// continue
-
-				// 3) 尝试非阻塞重试/排队（略）
 			}
 		}
 		finalizedSubsLock.Unlock()
@@ -476,4 +520,11 @@ func FinalizedEntries() chan *Entry {
 	finalizedSubs = append(finalizedSubs, ch)
 	finalizedSubsLock.Unlock()
 	return ch
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }

@@ -15,142 +15,95 @@
 package account
 
 import (
+	"sort"
 	"sync"
-
-	pb "github.com/hyperledger-labs/mirbft/protobufs"
-	logger "github.com/rs/zerolog/log"
 )
+
+// 每个 key 的互斥锁 + 引用计数（有人持有就保留，没人持有就从表里删除）
+type keyLock struct {
+	mu  sync.Mutex
+	ref int
+}
 
 var (
 	// 余额表，用内置 map + RWMutex 代替 concurrent-map
 	balMu   sync.RWMutex
-	balance = make(map[string]float64)
+	balance = make(map[int32]float64)
 
 	gasFee = 0.0
 	A      = 1
+
+	lockTableMu sync.Mutex
+	lockTable   = make(map[int32]*keyLock)
 )
 
-func init() {
-	// if tmpNum, err := strconv.ParseFloat(config.Config.Gasfee, 64); err == nil {
-	// 	logger.Debug().Float64("Gasfee", tmpNum).Msg("Gas Fee.")
-	// 	gasFee = tmpNum
-	// }
-	LoadData()
-	logger.Debug().Int("a", A).Msg("In balance init() !")
+// KeyGuard 表示已加锁的一组 key；调用 Unlock() 释放
+type KeyGuard struct {
+	keys []int32
+	ls   []*keyLock
 }
 
-func LoadData() {
-	// cnt := 0
-
-	// homedir, _ := os.UserHomeDir()
-	// file, err := os.Open(homedir + "/balance.csv")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer file.Close()
-
-	// br := bufio.NewReader(file)
-	// for {
-	// 	cnt++
-	// 	line, _, c := br.ReadLine()
-	// 	if c == io.EOF {
-	// 		break
-	// 	}
-	// 	fields := strings.Split(string(line), ",")
-	// 	if len(fields) < 2 {
-	// 		continue
-	// 	}
-	// 	amt, err := strconv.ParseFloat(fields[1], 64)
-	// 	if err != nil {
-	// 		logger.Fatal().Msg(err.Error())
-	// 	}
-	// 	UpdateBalance(fields[0], amt)
-	// }
-
-	// logger.Debug().Int("AccountCnt", cnt).Msg("Loaded balance !")
-	logger.Debug().Int("AccountCnt", len(balance)).Msg("Loaded balance !")
+// LockKey 加锁单个 key
+func LockKey(k int32) *KeyGuard {
+	return LockKeys(k)
 }
 
-// 设置账户余额（覆盖）
-func UpdateBalance(accountHash string, amount float64) {
-	balMu.Lock()
-	balance[accountHash] = amount
-	balMu.Unlock()
-}
-
-// 读取账户余额；不存在返回 -1
-func GetBalance(accountHash string) float64 {
-	balMu.RLock()
-	v, ok := balance[accountHash]
-	balMu.RUnlock()
-	if ok {
-		return v
+// LockKeys 一次性加锁多 key（内部排序去重，避免死锁）
+func LockKeys(keys ...int32) *KeyGuard {
+	if len(keys) == 0 {
+		return &KeyGuard{}
 	}
-	return -1.0
+	// 排序 + 去重
+	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+	uniq := keys[:0]
+	var last *int32
+	for i := range keys {
+		if last == nil || keys[i] != *last {
+			uniq = append(uniq, keys[i])
+			last = &keys[i]
+		}
+	}
+	keys = uniq
+
+	// 取出/创建 keyLock，并 +ref
+	ls := make([]*keyLock, len(keys))
+	lockTableMu.Lock()
+	for i, k := range keys {
+		kl := lockTable[k]
+		if kl == nil {
+			kl = &keyLock{}
+			lockTable[k] = kl
+		}
+		kl.ref++
+		ls[i] = kl
+	}
+	lockTableMu.Unlock()
+
+	// 按相同顺序逐个加互斥，避免环路
+	for _, kl := range ls {
+		kl.mu.Lock()
+	}
+
+	return &KeyGuard{keys: keys, ls: ls}
 }
 
-// 校验请求是否有足够余额
-func RequestIsValid(request *pb.ClientRequest) bool {
-	// tx := &pb.Transaction{}
-	// if err := proto.Unmarshal(request.Payload, tx); err != nil {
-	// 	// 解析失败直接拒绝（也可以按你原来的逻辑返回 true）
-	// 	return false
-	// }
-
-	// cost := tx.Amount + tx.Fee
-	// // 非合约交易需要额外 gas
-	// if request.IsContract == 0 {
-	// 	cost += gasFee
-	// }
-
-	// balMu.RLock()
-	// senderBalance, ok := balance[tx.SenderHash]
-	// balMu.RUnlock()
-	// if !ok {
-	// 	// 不存在则视为 0（按你此前语义：返回 true；如果希望严格，可以返回 false）
-	// 	return true
-	// }
-	// return senderBalance >= cost
-	return true
-}
-
-// 在一个大锁里做“读-改-写”，避免并发条件竞争
-func transfer(sender string, receiver string, amount float64) {
-	// balMu.Lock()
-	// if s, ok := balance[sender]; ok {
-	// 	balance[sender] = s - amount
-	// }
-	// if r, ok := balance[receiver]; ok {
-	// 	balance[receiver] = r + amount
-	// }
-	// balMu.Unlock()
-}
-
-// 批量提交请求：
-// - 合约交易先冻结 gasFee（先扣掉）
-// - 然后无论是否合约，都做 amount+fee 的转账
-func CommitEntry(requests []*pb.ClientRequest) {
-	// May be concurrent...
-	logger.Debug().Int("requestsLen", len(requests)).Msg("account CommitEntry")
-
-	// for _, request := range requests {
-	// 	tx := &pb.Transaction{}
-	// 	if err := proto.Unmarshal(request.Payload, tx); err != nil {
-	// 		continue
-	// 	}
-
-	// 	if request.IsContract == 1 {
-	// 		// 合约交易先扣除 gas
-	// 		balMu.Lock()
-	// 		if s, ok := balance[tx.SenderHash]; ok {
-	// 			balance[tx.SenderHash] = s - gasFee
-	// 		}
-	// 		balMu.Unlock()
-	// 	}
-
-	// 	// 转账（包含 tx.Fee）
-	// 	transfer(tx.SenderHash, tx.ReceiverHash, tx.Amount+tx.Fee)
-	// }
-
-	logger.Debug().Float64("Amount", GetBalance("0")).Msg("Account: 0")
+// 解锁（逆序释放），并在无人持有时从表中清理
+func (g *KeyGuard) Unlock() {
+	if g == nil || len(g.ls) == 0 {
+		return
+	}
+	// 先释放互斥锁
+	for i := len(g.ls) - 1; i >= 0; i-- {
+		g.ls[i].mu.Unlock()
+	}
+	// 再减引用并做垃圾回收
+	lockTableMu.Lock()
+	for i, k := range g.keys {
+		kl := g.ls[i]
+		kl.ref--
+		if kl.ref == 0 {
+			delete(lockTable, k)
+		}
+	}
+	lockTableMu.Unlock()
 }
