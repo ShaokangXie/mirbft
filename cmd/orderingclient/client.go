@@ -8,8 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/crypto"
 	"github.com/hyperledger-labs/mirbft/discovery"
@@ -19,6 +17,8 @@ import (
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	"github.com/hyperledger-labs/mirbft/request"
 	"github.com/hyperledger-labs/mirbft/tracing"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 )
 
@@ -236,8 +236,8 @@ func (c *client) Run(wg *sync.WaitGroup) {
 	var ordererIDs []int32
 	if config.Config.LeaderPolicy == "SimulatedRandomFailures" {
 		ordererIDs = manager.NewLeaderPolicy(config.Config.LeaderPolicy).GetLeaders(0)
-	//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
-	//	ordererIDs = membership.CorrectPeers()
+		//} else if config.Config.Failures > 0 && (config.Config.CrashTiming == "EpochStart" || config.Config.CrashTiming == "EpochEnd") {
+		//	ordererIDs = membership.CorrectPeers()
 	} else {
 		ordererIDs = membership.AllNodeIDs()
 	}
@@ -415,7 +415,8 @@ func (c *client) submitRequest(seqNr int32) {
 	// Find out to which orderers to send the request.
 	var destIDs []int32
 	if c.currentBucketAssignment != nil {
-		destIDs = c.guessTargetOrderers(req)
+		// destIDs = c.guessTargetOrderers(req)
+		destIDs = membership.AllNodeIDs()
 	} else {
 		destIDs = membership.AllNodeIDs()
 	}

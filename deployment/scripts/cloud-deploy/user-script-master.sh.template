@@ -37,15 +37,14 @@ master_command_file=$work_dir/master-commands.cmd
 # { # The whole script is wrapped in curly braces to redirect its output to $log_file
 
 # CHANGE HERE !!!
-sed -i '1iexport PATH=$PATH:/root/bin' /root/.bashrc
-sed -i '1iexport PATH=$PATH:/usr/lib/go-1.21/bin' /root/.bashrc
-sed -i '1iexport PATH=$PATH:$GOPATH/bin' /root/.bashrc
-sed -i '1iexport GOPATH=/root/go' /root/.bashrc
-source /root/.bashrc
+# sed -i '1iexport PATH=$PATH:/root/bin' /root/.bashrc
+# sed -i '1iexport PATH=$PATH:/usr/lib/go-1.21/bin' /root/.bashrc
+# sed -i '1iexport PATH=$PATH:$GOPATH/bin' /root/.bashrc
+# sed -i '1iexport GOPATH=/root/go' /root/.bashrc
+# source /root/.bashrc
 export GOPATH=$work_dir/go
 export PATH=$PATH:$GOPATH/bin
 export PATH=$PATH:$work_dir/bin
-export PATH=$PATH:/usr/lib/go-1.21/bin
 
 echo "INITIALZING" > $status_file
 
@@ -94,9 +93,9 @@ add-apt-repository -y ppa:longsleep/golang-backports
 
 apt-get -y update
 apt-get -y install \
-	golang-1.21-go \
 	protobuf-compiler \
 	protobuf-compiler-grpc \
+	golang-go \
 	git \
 	openssl \
 	jq \
@@ -104,39 +103,44 @@ apt-get -y install \
 	make \
 	gcc
 
-echo "Disabling Go modules."
-sed -i '1iexport GO111MODULE=auto' /root/.bashrc
-sed -i '1iexport GOCACHE=/root/.cache/go-build' /root/.bashrc
-sed -i '1iexport GIT_SSL_NO_VERIFY=1' /root/.bashrc
-source /root/.bashrc
-export GO111MODULE=auto
-export GOCACHE=/root/.cache/go-build
-export GIT_SSL_NO_VERIFY=1
+echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.bashrc
+echo 'export GO111MODULE=on' >> ~/.bashrc
+go env -w GO111MODULE=on
+source ~/.bashrc
 
-echo "Installing golang packages. (May take a long time without producing output.)"
+# echo "Disabling Go modules."
+# sed -i '1iexport GO111MODULE=auto' /root/.bashrc
+# sed -i '1iexport GOCACHE=/root/.cache/go-build' /root/.bashrc
+# sed -i '1iexport GIT_SSL_NO_VERIFY=1' /root/.bashrc
+# source /root/.bashrc
+# export GO111MODULE=auto
+# export GOCACHE=/root/.cache/go-build
+# export GIT_SSL_NO_VERIFY=1
 
-echo "Installing gRPC for Go."
-go get -u google.golang.org/grpc
+# echo "Installing golang packages. (May take a long time without producing output.)"
 
-echo "Installing Protobufs for Go."
-go get -u github.com/golang/protobuf/protoc-gen-go
+# echo "Installing gRPC for Go."
+# go get -u google.golang.org/grpc
 
-echo "Installing Zerolog for Go."
-go get -u github.com/rs/zerolog/log
+# echo "Installing Protobufs for Go."
+# go get -u github.com/golang/protobuf/protoc-gen-go
 
-echo "Installing Linux Goprocinfo for Go"
-go get -u github.com/c9s/goprocinfo/linux
+# echo "Installing Zerolog for Go."
+# go get -u github.com/rs/zerolog/log
 
-echo "Installing Kyber for Go"
-go get -u go.dedis.ch/kyber
-go get go.dedis.ch/fixbuf
-go get golang.org/x/crypto/blake2b
+# echo "Installing Linux Goprocinfo for Go"
+# go get -u github.com/c9s/goprocinfo/linux
 
-echo "Installing the YAML parser for Go"
-go get -u gopkg.in/yaml.v2
+# echo "Installing Kyber for Go"
+# go get -u go.dedis.ch/kyber
+# go get go.dedis.ch/fixbuf
+# go get golang.org/x/crypto/blake2b
 
-echo "Installing go-logging for Mir-BFT"
-go get -u github.com/op/go-logging
+# echo "Installing the YAML parser for Go"
+# go get -u gopkg.in/yaml.v2
+
+# echo "Installing go-logging for Mir-BFT"
+# go get -u github.com/op/go-logging
 
 echo "Creating app folders."
 cd $GOPATH || exit 1

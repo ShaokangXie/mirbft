@@ -37,15 +37,15 @@ machineLocations="fra05"
 faultyMachineLocations="sjc04 osa23 ams03 syd05 lon06 wdc07 che01 tok05 par01 dal10 fra05 mil01 mex01 tor01 tor04 seo01"
 
 # number of client instances per node for 1/16/32 client machines
-clients1=""    # deploys 1 client machine which run the specified number of client instances
-clients16="8"    # deploys 16 client machine which run the specified number of client instances
+clients1="8"    # deploys 1 client machine which run the specified number of client instances
+clients16=""    # deploys 16 client machine which run the specified number of client instances
 clients32=""    # deploys 32 client machine which run the specified number of client instances
-systemSizes="8" # Must be sorted in ascending order!
+systemSizes="4" # Must be sorted in ascending order!
 failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
-fixBatchRate=true
+fixBatchRate=false
 networkInterface="ens5"
 
-StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
 privKeyNumEachPeer=(10) # Using as buffer for lagged instance
 UseSig=(false)
 tnCheckpointCnt=(3)
@@ -72,7 +72,7 @@ throughputCap=131072000     # The system will always be proposing requests at a 
 
 # System composition
 orderers="Pbft"             # Possible values: Pbft HotStuff Raft Dummy
-checkpointers="Signing"
+checkpointers="Simple"
 
 # Parameters chosen for experiments
 durations="60"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
@@ -122,7 +122,7 @@ function skip() {
 
 throughputsAuthPbft=$()
 # throughputsAuthPbft[4]="105000 110000 115000 120000"
-throughputsAuthPbft[4]="60000 70000 80000 90000 100000"
+throughputsAuthPbft[4]="10000 20000 30000"
 throughputsAuthPbft[8]="60000"
 throughputsAuthPbft[16]="80000 90000"
 throughputsAuthPbft[32]="90000 100000 110000 120000"

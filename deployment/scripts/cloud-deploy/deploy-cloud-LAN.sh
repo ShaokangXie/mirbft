@@ -17,7 +17,7 @@ if [ "$1" = "-i" ]; then
     if [ "$1" = "-r" ]; then
         shift
         aws configure set region us-east-1
-        new_instance_info=$(aws ec2 run-instances \
+        new_instance_info=$(aws --no-cli-pager ec2 run-instances \
          --launch-template LaunchTemplateId=lt-0854465890b2cf8e9 \
          --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value="Parallel-bft-instance"}]' \
          --count $totalnum)
@@ -27,13 +27,13 @@ if [ "$1" = "-i" ]; then
     fi
 
     public_ip=$(
-    aws ec2 describe-instances   \
+    aws --no-cli-pager ec2 describe-instances   \
     --filters "Name=tag:Name,Values=Parallel-bft-instance" "Name=instance-state-name,Values=running" \
     --query "Reservations[*].Instances[*].PublicIpAddress"   \
     --output=text)
     
     private_ip=$(
-    aws ec2 describe-instances   \
+    aws --no-cli-pager ec2 describe-instances   \
     --filters "Name=tag:Name,Values=Parallel-bft-instance" "Name=instance-state-name,Values=running" \
     --query "Reservations[*].Instances[*].PrivateIpAddress"   \
     --output=text)
@@ -176,11 +176,12 @@ fi
 
 if [ "$1" = "-sd" ]; then
     shift
-    aws ec2 terminate-instances --instance-ids $(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)
+    aws --no-cli-pager ec2 terminate-instances --instance-ids $(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)
 fi
 
 if [ "$1" = "-st" ]; then
     shift
-    aws ec2 stop-instances --instance-ids $(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)
+    aws --no-cli-pager ec2 stop-instances --instance-ids $(aws ec2 describe-instances --query "Reservations[].Instances[].InstanceId" --output text)
 fi
 # scp -r -i scripts/cloud-deploy/key/id_rsa -o StrictHostKeyChecking=no -o LogLevel=ERROR -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 root@35.180.54.180:/root/experiment-output .
+# --no-cli-pager 
