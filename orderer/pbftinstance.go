@@ -694,8 +694,10 @@ func (pi *pbftInstance) handleMissingEntry(msg *pb.MissingEntry) {
 			batch.batch.Resurrect()
 		}
 		batch.batch = request.NewBatch(msg.Batch)
-		batch.batch.MarkInFlight()
-		batch.digest = msg.Digest
+		if batch.batch != nil {
+			batch.batch.MarkInFlight()
+			batch.digest = msg.Digest
+		}
 		// We must not touch the preprepared or prepared flag to prevent potential segfaults,
 		// as the prepare messages and the preprepare message might still be absent.
 		// fakepreprepare := &pb.PbftPreprepare{

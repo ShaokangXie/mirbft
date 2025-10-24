@@ -31,12 +31,12 @@ const (
 	// Capacity of channels used for subscribing to the log Entries.
 	// The goroutine committing a new Entry to the log will block if the channel is full.
 	// This should be avoided.
-	entryChannelCapacity = 10000
+	entryChannelCapacity = 10000000
 
 	// Same as above, for checkpoints
-	checkpointChannelCapacity = 100
+	checkpointChannelCapacity = 10000
 
-	finalizedChannelCapacity = 10000
+	finalizedChannelCapacity = 10000000
 )
 
 var (

@@ -284,18 +284,6 @@ func (b *Bucket) Prepend(req *Request) {
 
 	// 2) 索引不存在就补一条，不再 panic
 	if _, ok := b.reqIndex[reqID]; !ok {
-		// —— 这里顺便打印同一 (clID,clSN) 其它 repId 是否存在，诊断“repId 对不上”的问题
-		for rid := int32(0); rid < 8; rid++ { // 8 只是示例，如果你知道最大副本数就用那个
-			k := makeKey(req.Msg.RequestId.ClientId, req.Msg.RequestId.ClientSn, rid)
-			if _, ok := b.reqIndex[k]; ok {
-				logger.Warn().
-					Int("bucketId", b.id).
-					Int32("clId", req.Msg.RequestId.ClientId).
-					Int32("clSn", req.Msg.RequestId.ClientSn).
-					Int32("clRepIdPresent", rid).
-					Msg("Prepend: sibling repId key exists while target key missing")
-			}
-		}
 		logger.Warn().
 			Int("bucketId", b.id).
 			Int32("clId", req.Msg.RequestId.ClientId).

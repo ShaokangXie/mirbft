@@ -118,12 +118,12 @@ type client struct {
 func (c *client) genDeltasSimple(seqNr int32) []*pb.BalanceDelta {
 	// —— 可按需调整这几个常量来改变冲突强度 —— //
 	const (
-		accounts   = 200   // 账户范围 [1..accounts]
-		k          = 3     // 每笔参与账户数 (>=2)
-		amount     = 100.0 // 出款总额（入款之和相等）
-		hotFrac    = 0.05  // 热点账户占比
-		hotUseProb = 0.50  // 一笔至少涉及一个热点账户的概率
-		equalSplit = true  // 是否平均分配入款（否则随机比例）
+		accounts   = 200000 // 账户范围 [1..accounts]
+		k          = 2      // 每笔参与账户数 (>=2)
+		amount     = 100.0  // 出款总额（入款之和相等）
+		hotFrac    = 0.01   // 热点账户占比
+		hotUseProb = 0.001  // 一笔至少涉及一个热点账户的概率
+		equalSplit = true   // 是否平均分配入款（否则随机比例）
 	)
 
 	// 用 seqNr 做种子，保证每个 clSn 生成固定的一笔（简单可复现）
@@ -280,7 +280,7 @@ func (c *client) createRequest(seqNr int32) *pb.ClientRequest {
 		RequestId: &pb.RequestID{
 			ClientId:            c.ownClientID,
 			ClientSn:            seqNr,
-			ClientReplication:   3,
+			ClientReplication:   2,
 			ClientReplicationId: 0,
 		},
 		Payload:   nil,
@@ -497,7 +497,8 @@ func (c *client) submitRequest(seqNr int32) {
 	// Find out to which orderers to send the request.
 	var destIDs []int32
 	if c.currentBucketAssignment != nil {
-		destIDs = c.guessTargetOrderers(req)
+		// destIDs = c.guessTargetOrderers(req)
+		destIDs = membership.AllNodeIDs()
 	} else {
 		destIDs = membership.AllNodeIDs()
 	}
