@@ -30,25 +30,25 @@ import (
 	logger "github.com/rs/zerolog/log"
 )
 
-func init() {
-	// if tmpNum, err := strconv.ParseFloat(config.Config.Gasfee, 64); err == nil {
-	// 	logger.Debug().Float64("Gasfee", tmpNum).Msg("Gas Fee.")
-	// 	gasFee = tmpNum
-	// }
-	logger.Debug().Int("a", A).Msg("In balance init() !")
-}
+// ------------------------- 余额表（与原工程保持一致的最小接口） -------------------------
 
-// 设置账户余额（覆盖）
+// setBalance / getBalance 由 balance.go 提供全局 map 和锁；这里只给出最小实现占位
+// 若你已经有 balance.go（含 balMu/balance 等），请删除这两段占位实现，或保持一致。
+// var (
+// 	balMu   sync.RWMutex
+// 	balance = make(map[int32]float64)
+// )
+
 func setBalance(uid int32, amount float64) {
 	balMu.Lock()
 	balance[uid] = amount
 	balMu.Unlock()
 }
 
-// 读取账户余额；不存在返回 -1
 func getBalance(uid int32) float64 {
 	balMu.RLock()
 	v, ok := balance[uid]
+
 	balMu.RUnlock()
 	if !ok {
 		return 0.0
@@ -56,29 +56,30 @@ func getBalance(uid int32) float64 {
 	return v
 }
 
+// ------------------------- 事务聚合与去重 -------------------------
+
 type txKey = string // 用 RequestID 派生一个稳定 key
 
 type txSeen struct {
-	need int32             // 该 tx 应当出现的实例集合（位图），靠对象→桶计算
-	seen int32             // 已经在哪些实例看到
-	req  *pb.ClientRequest // 可持最后一份完整请求用于执行
+	need int32             // 该 tx 需要的副本数
+	seen int32             // 已见副本数
+	req  *pb.ClientRequest // 持最后一份请求用于执行
 }
 
 var (
 	ErrNonConserved      = errors.New("sum(deltas) must be 0 (fee excluded)")
 	ErrInsufficientFunds = errors.New("insufficient funds")
 	ErrOverflow          = errors.New("float overflow")
-	mu                   sync.Mutex
-	tracker              = make(map[txKey]*txSeen)
+
+	mu      sync.Mutex
+	tracker = make(map[txKey]*txSeen)
 )
 
 func txDetKey(req *pb.ClientRequest) txKey {
-	// 用 RequestID 三元组生成稳定 key（和上一版一致）
 	if rid := req.GetRequestId(); rid != nil {
 		return fmt.Sprintf("cid=%d/sn=%d/rep=%d",
 			rid.GetClientId(), rid.GetClientSn(), rid.GetClientReplication())
 	}
-	// 兜底：payload 哈希
 	sum := sha256.Sum256(req.GetPayload())
 	return "pl:" + hex.EncodeToString(sum[:8])
 }
@@ -88,7 +89,6 @@ func txOrderHash(k txKey) uint64 {
 	_, _ = h.Write([]byte(k))
 	return h.Sum64()
 }
-
 func lessTxKey(a, b txKey) bool {
 	ha, hb := txOrderHash(a), txOrderHash(b)
 	if ha == hb {
@@ -97,12 +97,12 @@ func lessTxKey(a, b txKey) bool {
 	return ha < hb
 }
 
+// 将本 entry 的请求并到全局计数，收齐副本的返回执行
 func UpdateAndCollectReady(reqs []*pb.ClientRequest) []*pb.ClientRequest {
 	mu.Lock()
 	defer mu.Unlock()
 
-	ready := make([]*pb.ClientRequest, 0)
-
+	ready := make([]*pb.ClientRequest, 0, len(reqs))
 	for _, req := range reqs {
 		if req == nil || len(req.Deltas) == 0 {
 			continue
@@ -118,20 +118,19 @@ func UpdateAndCollectReady(reqs []*pb.ClientRequest) []*pb.ClientRequest {
 			tracker[key] = ts
 		}
 		ts.seen++
-
-		// 达到应当集合 ⇒ ready
 		if ts.seen >= ts.need {
 			ready = append(ready, ts.req)
-			// 防止重复执行：可以直接删除或转移到“已执行”集合
 			delete(tracker, key)
 		}
 	}
 	return ready
 }
 
+// ------------------------- 轻量锁管理（2-cycle 检测） -------------------------
+
 type objLock struct {
 	owner txKey
-	waitQ *txMinHeap
+	waitQ *txMinHeap // 按 lessTxKey 的确定性顺序
 }
 type txMinHeap []txKey
 
@@ -145,7 +144,7 @@ type engine struct {
 	mu      sync.Mutex
 	locks   map[int32]*objLock           // obj -> 锁
 	owners  map[txKey]map[int32]struct{} // tx -> 已持有对象
-	waiting map[txKey]map[int32]struct{} // tx -> 正在等待对象
+	waiting map[txKey]map[int32]struct{} // tx -> 正在等待对象（反向索引）
 
 	waitCh map[txKey]chan struct{} // tx -> 等待通道（定向唤醒）
 }
@@ -157,33 +156,27 @@ var eng = &engine{
 	waitCh:  make(map[txKey]chan struct{}),
 }
 
-// 仅在持有 e.mu 的情况下调用：确保存在等待通道
 func (e *engine) ensureWaitChLocked(tk txKey) chan struct{} {
 	ch := e.waitCh[tk]
 	if ch == nil {
-		ch = make(chan struct{}, 1) // 缓冲 1，保证唤醒不阻塞
+		ch = make(chan struct{}, 1)
 		e.waitCh[tk] = ch
 	}
 	return ch
 }
-
-// 在未持锁的情况下也可用
 func (e *engine) ensureWaitCh(tk txKey) chan struct{} {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.ensureWaitChLocked(tk)
 }
-
-// 仅在持有 e.mu 时调用：非阻塞唤醒一个等待者
 func (e *engine) notifyUnsafe(tk txKey) {
 	if ch, ok := e.waitCh[tk]; ok {
 		select {
-		case ch <- struct{}{}: // 成功投递唤醒信号
-		default: // 已有未消费的信号，跳过
+		case ch <- struct{}{}:
+		default:
 		}
 	}
 }
-
 func removeFromWaitQ(h *txMinHeap, tk txKey) bool {
 	for i, v := range *h {
 		if v == tk {
@@ -194,7 +187,51 @@ func removeFromWaitQ(h *txMinHeap, tk txKey) bool {
 	return false
 }
 
-func (e *engine) tryLockAll(tk txKey, keys []int32) bool {
+// 回滚本次 tryLockAll 已拿到的部分对象（需持有 e.mu）
+func (e *engine) releaseSubsetLocked(tk txKey, objs []int32) {
+	for _, obj := range objs {
+		ol := e.locks[obj]
+		if ol == nil || ol.owner != tk {
+			continue
+		}
+		if ol.waitQ.Len() > 0 {
+			next := heap.Pop(ol.waitQ).(txKey)
+			ol.owner = next
+			if _, ok := e.owners[next]; !ok {
+				e.owners[next] = make(map[int32]struct{})
+			}
+			e.owners[next][obj] = struct{}{}
+			if w, ok := e.waiting[next]; ok {
+				delete(w, obj)
+				if len(w) == 0 {
+					delete(e.waiting, next)
+				}
+			}
+			e.notifyUnsafe(next)
+		} else {
+			ol.owner = ""
+		}
+		delete(e.owners[tk], obj)
+	}
+}
+
+// 2-cycle 快检：owner 是否等待着 tk 正持有的任意对象？
+func (e *engine) hasTwoCycleLocked(tk, owner txKey) bool {
+	waits := e.waiting[owner]
+	if waits == nil {
+		return false
+	}
+	for obj := range waits {
+		if ol := e.locks[obj]; ol != nil && ol.owner == tk {
+			return true
+		}
+	}
+	return false
+}
+
+// 尝试拿齐 keys；若遇冲突，先做 2-cycle 快检，若自己是受害者则“放弃本次并回滚”。
+// 返回 (allAcquired, abortedSelf)
+func (e *engine) tryLockAll(tk txKey, keys []int32) (bool, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -205,7 +242,9 @@ func (e *engine) tryLockAll(tk txKey, keys []int32) bool {
 		e.waiting[tk] = make(map[int32]struct{})
 	}
 
+	acquiredThisCall := make([]int32, 0, len(keys))
 	all := true
+
 	for _, obj := range keys {
 		if _, ok := e.owners[tk][obj]; ok {
 			continue
@@ -219,24 +258,55 @@ func (e *engine) tryLockAll(tk txKey, keys []int32) bool {
 		if ol.owner == "" {
 			ol.owner = tk
 			e.owners[tk][obj] = struct{}{}
+			acquiredThisCall = append(acquiredThisCall, obj)
 			delete(e.waiting[tk], obj)
-		} else if ol.owner != tk {
-			if _, already := e.waiting[tk][obj]; !already {
-				heap.Push(ol.waitQ, tk)
-				e.waiting[tk][obj] = struct{}{}
-				e.ensureWaitChLocked(tk) // 确保有专属唤醒 chan
-			}
-			all = false
+			continue
 		}
+		if ol.owner == tk {
+			continue
+		}
+
+		owner := ol.owner
+
+		// ---- 2-cycle 快检：tk <-> owner 互等？ ----
+		if e.hasTwoCycleLocked(tk, owner) {
+			// 选受害者（确定性）：用 lessTxKey；更“年轻”的作为受害者
+			victim := owner
+			if lessTxKey(owner, tk) {
+				victim = tk
+			}
+			if victim == tk {
+				// 自己为受害者：回滚本次已拿到的锁，清理等待登记，放弃本次
+				e.releaseSubsetLocked(tk, acquiredThisCall)
+				if waits := e.waiting[tk]; waits != nil {
+					for o := range waits {
+						if l := e.locks[o]; l != nil && l.waitQ != nil {
+							removeFromWaitQ(l.waitQ, tk)
+						}
+					}
+					delete(e.waiting, tk)
+				}
+				return false, true // abortedSelf
+			}
+			// 对方为受害者：这里不去“强制剥夺”，保持 tk 正常排队等待，由对方未来释放/被外层重试处理
+		}
+
+		// 正常排队等待（去重）
+		if _, already := e.waiting[tk][obj]; !already {
+			heap.Push(ol.waitQ, tk)
+			e.waiting[tk][obj] = struct{}{}
+			e.ensureWaitChLocked(tk)
+		}
+		all = false
 	}
-	return all
+	return all, false
 }
 
 func (e *engine) releaseAll(tk txKey) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	// 1) 释放已持有的对象
+	// 释放持有的对象
 	if owned := e.owners[tk]; owned != nil {
 		for obj := range owned {
 			if ol := e.locks[obj]; ol != nil && ol.owner == tk {
@@ -261,7 +331,7 @@ func (e *engine) releaseAll(tk txKey) {
 		}
 	}
 
-	// 2) 清理仍在等待的对象队列中的 tk（关键修复）
+	// 把 tk 从仍在等待的对象的队列中移除（防“僵尸等待者”）
 	if waits := e.waiting[tk]; waits != nil {
 		for obj := range waits {
 			if ol := e.locks[obj]; ol != nil && ol.waitQ != nil {
@@ -275,113 +345,7 @@ func (e *engine) releaseAll(tk txKey) {
 	delete(e.waitCh, tk)
 }
 
-func (e *engine) detectDeadlockPickVictim() (victim txKey) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	// 构建等待图：u 等待 obj，且 obj 的 owner 是 v => u -> v
-	wfg := make(map[txKey]map[txKey]struct{})
-	nodes := make(map[txKey]struct{})
-
-	addEdge := func(u, v txKey) {
-		if u == "" || v == "" || u == v {
-			return
-		}
-		if _, ok := wfg[u]; !ok {
-			wfg[u] = make(map[txKey]struct{})
-		}
-		wfg[u][v] = struct{}{}
-		nodes[u], nodes[v] = struct{}{}, struct{}{}
-	}
-
-	for u, waits := range e.waiting {
-		for obj := range waits {
-			if ol := e.locks[obj]; ol != nil && ol.owner != "" && ol.owner != u {
-				addEdge(u, ol.owner)
-			}
-		}
-	}
-
-	// 将节点列表按确定性顺序排序
-	nodeList := make([]txKey, 0, len(nodes))
-	for u := range nodes {
-		nodeList = append(nodeList, u)
-	}
-	sort.Slice(nodeList, func(i, j int) bool { return lessTxKey(nodeList[i], nodeList[j]) })
-
-	// 邻居获取：对每个节点的邻接点也按确定性顺序排序
-	neighbors := func(u txKey) []txKey {
-		m := wfg[u]
-		if m == nil {
-			return nil
-		}
-		out := make([]txKey, 0, len(m))
-		for v := range m {
-			out = append(out, v)
-		}
-		sort.Slice(out, func(i, j int) bool { return lessTxKey(out[i], out[j]) })
-		return out
-	}
-
-	visited := make(map[txKey]bool)
-	onStack := make(map[txKey]bool)
-	stack := make([]txKey, 0)
-
-	// DFS：一旦找到环，选择环内哈希最小的 tx 作为受害者
-	var found bool
-	var dfs func(txKey) bool
-	dfs = func(u txKey) bool {
-		visited[u], onStack[u] = true, true
-		stack = append(stack, u)
-
-		for _, v := range neighbors(u) {
-			if !visited[v] {
-				if dfs(v) {
-					return true
-				}
-			} else if onStack[v] {
-				// 发现回边，stack 中 v..u 构成一个环
-				cycle := collectCycle(stack, v)
-				min := cycle[0]
-				for _, x := range cycle[1:] {
-					if lessTxKey(x, min) {
-						min = x
-					}
-				}
-				victim = min
-				found = true
-				return true
-			}
-		}
-
-		// 回溯
-		stack = stack[:len(stack)-1]
-		onStack[u] = false
-		return false
-	}
-
-	for _, u := range nodeList {
-		if !visited[u] {
-			if dfs(u) {
-				break
-			}
-		}
-	}
-
-	if found {
-		return victim
-	}
-	return ""
-}
-
-func collectCycle(stack []txKey, start txKey) []txKey {
-	for i := len(stack) - 1; i >= 0; i-- {
-		if stack[i] == start {
-			return append([]txKey(nil), stack[i:]...)
-		}
-	}
-	return nil
-}
+// ------------------------- 执行路径 -------------------------
 
 func applyRequest(req *pb.ClientRequest) error {
 	if req == nil || len(req.Deltas) == 0 {
@@ -402,7 +366,7 @@ func applyRequest(req *pb.ClientRequest) error {
 		return ErrNonConserved
 	}
 
-	// 事务ID & 对象键（升序）
+	// 事务键 + 排序后的对象列表
 	tk := txDetKey(req)
 	keys := make([]int32, 0, len(agg))
 	for uid := range agg {
@@ -410,37 +374,26 @@ func applyRequest(req *pb.ClientRequest) error {
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 
-	// 2PL: 拿齐锁；拿不到则：先尝试解环，否则等待定向唤醒或超时
+	// 拿齐锁；若未拿到且未被判为受害者，则等待定向唤醒并重试
 	for {
-		if eng.tryLockAll(tk, keys) {
+		all, aborted := eng.tryLockAll(tk, keys)
+		if aborted {
+			return errors.New("aborted by 2-cycle resolver")
+		}
+		if all {
 			break
 		}
-
-		// 先尝试一次死锁检测/解环
-		if victim := eng.detectDeadlockPickVictim(); victim != "" {
-			if victim == tk {
-				eng.releaseAll(tk)
-				return errors.New("aborted by deadlock resolver")
-			}
-			eng.releaseAll(victim) // 打破环
-			continue
-		}
-
-		// 没环：等待“对象锁转交到自己时”的定向唤醒；若超时则重试
 		ch := eng.ensureWaitCh(tk)
 		select {
 		case <-ch:
-			// 被唤醒（某把锁已转交给我），立即重试拿齐所有锁
 		case <-time.After(2 * time.Millisecond):
-			// 兜底超时：避免错过唤醒/或长时间无进展，回去重试 + 可能再次检测
 		}
 	}
 
-	// // 执行（余额预检查 + 统一写回）
+	// 执行（此处示例为直接写回；如需余额检查可解注下段）
 	// for uid, delta := range agg {
 	// 	if delta < 0 {
-	// 		cur := getBalance(uid)
-	// 		if cur+delta < -1e-12 {
+	// 		if cur := getBalance(uid); cur+delta < -1e-12 {
 	// 			eng.releaseAll(tk)
 	// 			return fmt.Errorf("%w: uid=%d need=%f have=%f", ErrInsufficientFunds, uid, -delta, cur)
 	// 		}
@@ -454,27 +407,16 @@ func applyRequest(req *pb.ClientRequest) error {
 	return nil
 }
 
-// 批量提交
+// 批量提交（顺序执行，系统并行度由上一层 worker 池控制）
 func CommitEntry(requests []*pb.ClientRequest) {
-	logger.Debug().
-		Int("requestsLen", len(requests)).
-		Msg("account CommitEntryWithInstance")
-
-	// 第一步：更新 ready（按实例去重）
 	ready := UpdateAndCollectReady(requests)
 	if len(ready) == 0 {
 		return
 	}
-
-	// 第二步：顺序执行（并行度由 log 包的上层 worker 池统一控制）
 	for _, r := range ready {
 		if err := applyRequest(r); err != nil {
 			logger.Error().Err(err).Msg("applyRequest failed")
 		}
 	}
-
-	logger.Info().
-		Int("executedReady", len(ready)).
-		Msg("CommitEntryWithInstance done")
-
+	logger.Info().Int("executedReady", len(ready)).Msg("CommitEntryWithInstance done")
 }
