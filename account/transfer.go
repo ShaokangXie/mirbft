@@ -35,44 +35,7 @@ func init() {
 	// 	logger.Debug().Float64("Gasfee", tmpNum).Msg("Gas Fee.")
 	// 	gasFee = tmpNum
 	// }
-	LoadData()
 	logger.Debug().Int("a", A).Msg("In balance init() !")
-}
-
-func LoadData() {
-	// cnt := 0
-
-	// homedir, _ := os.UserHomeDir()
-	// file, err := os.Open(homedir + "/balance.csv")
-	// if err != nil {
-	// 	panic(err)
-	// }
-	// defer file.Close()
-
-	// br := bufio.NewReader(file)
-	// for {
-	// 	cnt++
-	// 	line, _, c := br.ReadLine()
-	// 	if c == io.EOF {
-	// 		break
-	// 	}
-	// 	fields := strings.Split(string(line), ",")
-	// 	if len(fields) < 2 {
-	// 		continue
-	// 	}
-	// 	amt, err := strconv.ParseFloat(fields[1], 64)
-	// 	if err != nil {
-	// 		logger.Fatal().Msg(err.Error())
-	// 	}
-	// 	UpdateBalance(fields[0], amt)
-	// }
-
-	setBalance(101, 0.0)
-	setBalance(202, 0.0)
-	setBalance(303, 0.0)
-
-	// logger.Debug().Int("AccountCnt", cnt).Msg("Loaded balance !")
-	logger.Debug().Int("AccountCnt", len(balance)).Msg("Loaded balance !")
 }
 
 // 设置账户余额（覆盖）
@@ -511,7 +474,6 @@ func CommitEntry(requests []*pb.ClientRequest) {
 	}
 
 	logger.Info().
-		Float64("TotalAmount", getBalance(101)).
 		Int("executedReady", len(ready)).
 		Msg("CommitEntryWithInstance done")
 

@@ -75,7 +75,7 @@ orderers="Pbft"             # Possible values: Pbft HotStuff Raft Dummy
 checkpointers="Simple"
 
 # Parameters chosen for experiments
-durations="60"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
+durations="120"             # [s]   !!! Don't forget to change the timeout in generate-master-commands.py if increasing this value !!!
 bandwidths="1gbit"         # any value accepted by the tc command or "unlimited" !!! ATTENTION: Adapt MaxProposeDataRate in config accordingly !!!
 payloadSizes="500"         # [Bytes]
 fixedEpochLength=false
