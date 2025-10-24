@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"sort"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/rs/zerolog"
 	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -109,6 +111,75 @@ type client struct {
 	// Same as with logging, each client has a separate trace that is output in a separate file,
 	// even if multiple clients are running in the same process.
 	trace tracing.Trace
+
+	stopNow int32
+}
+
+func (c *client) genDeltasSimple(seqNr int32) []*pb.BalanceDelta {
+	// —— 可按需调整这几个常量来改变冲突强度 —— //
+	const (
+		accounts   = 200000 // 账户范围 [1..accounts]
+		k          = 2      // 每笔参与账户数 (>=2)
+		amount     = 100.0  // 出款总额（入款之和相等）
+		hotFrac    = 0.01   // 热点账户占比
+		hotUseProb = 0.001  // 一笔至少涉及一个热点账户的概率
+		equalSplit = true   // 是否平均分配入款（否则随机比例）
+	)
+
+	// 用 seqNr 做种子，保证每个 clSn 生成固定的一笔（简单可复现）
+	r := rand.New(rand.NewSource(int64(uint32(c.ownClientID))<<32 | int64(uint32(seqNr))))
+
+	// 准备热点集合
+	hotN := int(float64(accounts) * hotFrac)
+	hot := make([]int32, 0, hotN)
+	for i := 0; i < hotN; i++ {
+		hot = append(hot, int32(i+1)) // [1..hotN]
+	}
+
+	// 选 k 个互异账户，按概率强制包含一个热点
+	seen := make(map[int32]struct{}, k)
+	users := make([]int32, 0, k)
+	useHot := hotN > 0 && r.Float64() < hotUseProb
+	if useHot {
+		h := hot[r.Intn(hotN)]
+		users = append(users, h)
+		seen[h] = struct{}{}
+	}
+	for len(users) < k {
+		x := int32(r.Intn(accounts) + 1)
+		if _, ok := seen[x]; ok {
+			continue
+		}
+		seen[x] = struct{}{}
+		users = append(users, x)
+	}
+
+	// users[0] 出款，其余入款；总和守恒
+	d := make([]*pb.BalanceDelta, 0, k)
+	d = append(d, &pb.BalanceDelta{UserId: users[0], AmountDelta: -amount})
+
+	if equalSplit {
+		share := amount / float64(k-1)
+		for j := 1; j < k; j++ {
+			d = append(d, &pb.BalanceDelta{UserId: users[j], AmountDelta: share})
+		}
+	} else {
+		// 随机比例但和为 amount
+		weights := make([]float64, k-1)
+		var sum float64
+		for j := range weights {
+			w := r.Float64()
+			if w == 0 {
+				w = 1e-6
+			}
+			weights[j] = w
+			sum += w
+		}
+		for j := 1; j < k; j++ {
+			d = append(d, &pb.BalanceDelta{UserId: users[j], AmountDelta: amount * (weights[j-1] / sum)})
+		}
+	}
+	return d
 }
 
 // Allocates and returns a pointer to a new client.
@@ -202,16 +273,23 @@ func (c *client) discoverPeers(dServAddr string) {
 }
 
 func (c *client) createRequest(seqNr int32) *pb.ClientRequest {
+	deltas := c.genDeltasSimple(seqNr)
 
 	// Create request message.
 	req := &pb.ClientRequest{
 		RequestId: &pb.RequestID{
-			ClientId: c.ownClientID,
-			ClientSn: seqNr,
+			ClientId:            c.ownClientID,
+			ClientSn:            seqNr,
+			ClientReplication:   2,
+			ClientReplicationId: 0,
 		},
-		Payload:   randomRequestPayload,
+		Payload:   nil,
 		Signature: nil,
+		Deltas:    deltas,
 	}
+	copy(req.Deltas, deltas)
+	sizeDelta := proto.Size(req)
+	req.Payload = randomRequestPayload[sizeDelta:]
 
 	// Sign request message.
 	var err error = nil
@@ -314,13 +392,17 @@ func (c *client) Run(wg *sync.WaitGroup) {
 		// Wait for enough responses for all requests
 		// We the number of in-flight requests every second until their number is 0.
 		// TODO: This is a dummy ugly implementation, make it nicer.
-		c.Lock()
-		for len(c.submittedTo) > 0 {
-			c.Unlock()
-			time.Sleep(time.Second)
+		for {
 			c.Lock()
+			pending := len(c.submittedTo)
+			c.Unlock()
+
+			// c.log.Info().Int32("len", int32(pending)).Msg("Waiting for all responses.")
+			if pending == 0 || atomic.LoadInt32(&c.stopNow) == 1 {
+				break
+			}
+			time.Sleep(time.Second)
 		}
-		c.Unlock()
 
 		// Stop response handlers and wait for them.
 		for peerID, conn := range reqConns {
@@ -626,6 +708,11 @@ func (c *client) resubmitPendingRequests() {
 		Int32("epoch", c.epoch).
 		Msg("Resubmitted Requests.")
 
+	// If no requests were resubmitted, it means all requests are finished, so we can stop the client.
+	if resubmitted == 0 && c.epoch > 0 {
+		// c.log.Info().Msg("All requests finished after bucket reassignment, stopping client.")
+		atomic.StoreInt32(&c.stopNow, 1)
+	}
 }
 
 // Returns a bucket assignment for an epoch if it is ready, nil otherwise.

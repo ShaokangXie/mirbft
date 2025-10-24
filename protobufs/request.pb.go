@@ -27,6 +27,7 @@ type ClientRequest struct {
 	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
 	Pubkey        []byte                 `protobuf:"bytes,3,opt,name=pubkey,proto3" json:"pubkey,omitempty"`
 	Signature     []byte                 `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
+	Deltas        []*BalanceDelta        `protobuf:"bytes,5,rep,name=deltas,proto3" json:"deltas,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -89,6 +90,65 @@ func (x *ClientRequest) GetSignature() []byte {
 	return nil
 }
 
+func (x *ClientRequest) GetDeltas() []*BalanceDelta {
+	if x != nil {
+		return x.Deltas
+	}
+	return nil
+}
+
+type BalanceDelta struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        int32                  `protobuf:"varint,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	AmountDelta   float64                `protobuf:"fixed64,2,opt,name=amount_delta,json=amountDelta,proto3" json:"amount_delta,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BalanceDelta) Reset() {
+	*x = BalanceDelta{}
+	mi := &file_request_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BalanceDelta) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BalanceDelta) ProtoMessage() {}
+
+func (x *BalanceDelta) ProtoReflect() protoreflect.Message {
+	mi := &file_request_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BalanceDelta.ProtoReflect.Descriptor instead.
+func (*BalanceDelta) Descriptor() ([]byte, []int) {
+	return file_request_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *BalanceDelta) GetUserId() int32 {
+	if x != nil {
+		return x.UserId
+	}
+	return 0
+}
+
+func (x *BalanceDelta) GetAmountDelta() float64 {
+	if x != nil {
+		return x.AmountDelta
+	}
+	return 0
+}
+
 type ClientResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ClientSn      int32                  `protobuf:"varint,1,opt,name=client_sn,json=clientSn,proto3" json:"client_sn,omitempty"`
@@ -99,7 +159,7 @@ type ClientResponse struct {
 
 func (x *ClientResponse) Reset() {
 	*x = ClientResponse{}
-	mi := &file_request_proto_msgTypes[1]
+	mi := &file_request_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -111,7 +171,7 @@ func (x *ClientResponse) String() string {
 func (*ClientResponse) ProtoMessage() {}
 
 func (x *ClientResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[1]
+	mi := &file_request_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -124,7 +184,7 @@ func (x *ClientResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ClientResponse.ProtoReflect.Descriptor instead.
 func (*ClientResponse) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{1}
+	return file_request_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ClientResponse) GetClientSn() int32 {
@@ -142,16 +202,18 @@ func (x *ClientResponse) GetOrderSn() int32 {
 }
 
 type RequestID struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ClientId      int32                  `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
-	ClientSn      int32                  `protobuf:"varint,2,opt,name=client_sn,json=clientSn,proto3" json:"client_sn,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	ClientId            int32                  `protobuf:"varint,1,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
+	ClientSn            int32                  `protobuf:"varint,2,opt,name=client_sn,json=clientSn,proto3" json:"client_sn,omitempty"`
+	ClientReplication   int32                  `protobuf:"varint,3,opt,name=client_replication,json=clientReplication,proto3" json:"client_replication,omitempty"`
+	ClientReplicationId int32                  `protobuf:"varint,4,opt,name=client_replication_id,json=clientReplicationId,proto3" json:"client_replication_id,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *RequestID) Reset() {
 	*x = RequestID{}
-	mi := &file_request_proto_msgTypes[2]
+	mi := &file_request_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -163,7 +225,7 @@ func (x *RequestID) String() string {
 func (*RequestID) ProtoMessage() {}
 
 func (x *RequestID) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[2]
+	mi := &file_request_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -176,7 +238,7 @@ func (x *RequestID) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RequestID.ProtoReflect.Descriptor instead.
 func (*RequestID) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{2}
+	return file_request_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *RequestID) GetClientId() int32 {
@@ -193,6 +255,20 @@ func (x *RequestID) GetClientSn() int32 {
 	return 0
 }
 
+func (x *RequestID) GetClientReplication() int32 {
+	if x != nil {
+		return x.ClientReplication
+	}
+	return 0
+}
+
+func (x *RequestID) GetClientReplicationId() int32 {
+	if x != nil {
+		return x.ClientReplicationId
+	}
+	return 0
+}
+
 type Batch struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Requests      []*ClientRequest       `protobuf:"bytes,1,rep,name=requests,proto3" json:"requests,omitempty"`
@@ -202,7 +278,7 @@ type Batch struct {
 
 func (x *Batch) Reset() {
 	*x = Batch{}
-	mi := &file_request_proto_msgTypes[3]
+	mi := &file_request_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -214,7 +290,7 @@ func (x *Batch) String() string {
 func (*Batch) ProtoMessage() {}
 
 func (x *Batch) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[3]
+	mi := &file_request_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -227,7 +303,7 @@ func (x *Batch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Batch.ProtoReflect.Descriptor instead.
 func (*Batch) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{3}
+	return file_request_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Batch) GetRequests() []*ClientRequest {
@@ -247,7 +323,7 @@ type MissingEntryRequest struct {
 
 func (x *MissingEntryRequest) Reset() {
 	*x = MissingEntryRequest{}
-	mi := &file_request_proto_msgTypes[4]
+	mi := &file_request_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -259,7 +335,7 @@ func (x *MissingEntryRequest) String() string {
 func (*MissingEntryRequest) ProtoMessage() {}
 
 func (x *MissingEntryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[4]
+	mi := &file_request_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -272,7 +348,7 @@ func (x *MissingEntryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissingEntryRequest.ProtoReflect.Descriptor instead.
 func (*MissingEntryRequest) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{4}
+	return file_request_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *MissingEntryRequest) GetSn() int32 {
@@ -303,7 +379,7 @@ type MissingEntry struct {
 
 func (x *MissingEntry) Reset() {
 	*x = MissingEntry{}
-	mi := &file_request_proto_msgTypes[5]
+	mi := &file_request_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -315,7 +391,7 @@ func (x *MissingEntry) String() string {
 func (*MissingEntry) ProtoMessage() {}
 
 func (x *MissingEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[5]
+	mi := &file_request_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -328,7 +404,7 @@ func (x *MissingEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MissingEntry.ProtoReflect.Descriptor instead.
 func (*MissingEntry) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{5}
+	return file_request_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *MissingEntry) GetSn() int32 {
@@ -382,7 +458,7 @@ type BucketSubscription struct {
 
 func (x *BucketSubscription) Reset() {
 	*x = BucketSubscription{}
-	mi := &file_request_proto_msgTypes[6]
+	mi := &file_request_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -394,7 +470,7 @@ func (x *BucketSubscription) String() string {
 func (*BucketSubscription) ProtoMessage() {}
 
 func (x *BucketSubscription) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[6]
+	mi := &file_request_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -407,7 +483,7 @@ func (x *BucketSubscription) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BucketSubscription.ProtoReflect.Descriptor instead.
 func (*BucketSubscription) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{6}
+	return file_request_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BucketSubscription) GetClientId() int32 {
@@ -427,7 +503,7 @@ type BucketAssignment struct {
 
 func (x *BucketAssignment) Reset() {
 	*x = BucketAssignment{}
-	mi := &file_request_proto_msgTypes[7]
+	mi := &file_request_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -439,7 +515,7 @@ func (x *BucketAssignment) String() string {
 func (*BucketAssignment) ProtoMessage() {}
 
 func (x *BucketAssignment) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[7]
+	mi := &file_request_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -452,7 +528,7 @@ func (x *BucketAssignment) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BucketAssignment.ProtoReflect.Descriptor instead.
 func (*BucketAssignment) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{7}
+	return file_request_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *BucketAssignment) GetEpoch() int32 {
@@ -478,7 +554,7 @@ type ListOfInt32 struct {
 
 func (x *ListOfInt32) Reset() {
 	*x = ListOfInt32{}
-	mi := &file_request_proto_msgTypes[8]
+	mi := &file_request_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -490,7 +566,7 @@ func (x *ListOfInt32) String() string {
 func (*ListOfInt32) ProtoMessage() {}
 
 func (x *ListOfInt32) ProtoReflect() protoreflect.Message {
-	mi := &file_request_proto_msgTypes[8]
+	mi := &file_request_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -503,7 +579,7 @@ func (x *ListOfInt32) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListOfInt32.ProtoReflect.Descriptor instead.
 func (*ListOfInt32) Descriptor() ([]byte, []int) {
-	return file_request_proto_rawDescGZIP(), []int{8}
+	return file_request_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ListOfInt32) GetVals() []int32 {
@@ -517,19 +593,25 @@ var File_request_proto protoreflect.FileDescriptor
 
 const file_request_proto_rawDesc = "" +
 	"\n" +
-	"\rrequest.proto\x12\tprotobufs\"\x94\x01\n" +
+	"\rrequest.proto\x12\tprotobufs\"\xc5\x01\n" +
 	"\rClientRequest\x123\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\v2\x14.protobufs.RequestIDR\trequestId\x12\x18\n" +
 	"\apayload\x18\x02 \x01(\fR\apayload\x12\x16\n" +
 	"\x06pubkey\x18\x03 \x01(\fR\x06pubkey\x12\x1c\n" +
-	"\tsignature\x18\x04 \x01(\fR\tsignature\"H\n" +
+	"\tsignature\x18\x04 \x01(\fR\tsignature\x12/\n" +
+	"\x06deltas\x18\x05 \x03(\v2\x17.protobufs.BalanceDeltaR\x06deltas\"J\n" +
+	"\fBalanceDelta\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\x05R\x06userId\x12!\n" +
+	"\famount_delta\x18\x02 \x01(\x01R\vamountDelta\"H\n" +
 	"\x0eClientResponse\x12\x1b\n" +
 	"\tclient_sn\x18\x01 \x01(\x05R\bclientSn\x12\x19\n" +
-	"\border_sn\x18\x02 \x01(\x05R\aorderSn\"E\n" +
+	"\border_sn\x18\x02 \x01(\x05R\aorderSn\"\xa8\x01\n" +
 	"\tRequestID\x12\x1b\n" +
 	"\tclient_id\x18\x01 \x01(\x05R\bclientId\x12\x1b\n" +
-	"\tclient_sn\x18\x02 \x01(\x05R\bclientSn\"=\n" +
+	"\tclient_sn\x18\x02 \x01(\x05R\bclientSn\x12-\n" +
+	"\x12client_replication\x18\x03 \x01(\x05R\x11clientReplication\x122\n" +
+	"\x15client_replication_id\x18\x04 \x01(\x05R\x13clientReplicationId\"=\n" +
 	"\x05Batch\x124\n" +
 	"\brequests\x18\x01 \x03(\v2\x18.protobufs.ClientRequestR\brequests\"N\n" +
 	"\x13MissingEntryRequest\x12\x0e\n" +
@@ -565,30 +647,32 @@ func file_request_proto_rawDescGZIP() []byte {
 	return file_request_proto_rawDescData
 }
 
-var file_request_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_request_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_request_proto_goTypes = []any{
 	(*ClientRequest)(nil),       // 0: protobufs.ClientRequest
-	(*ClientResponse)(nil),      // 1: protobufs.ClientResponse
-	(*RequestID)(nil),           // 2: protobufs.RequestID
-	(*Batch)(nil),               // 3: protobufs.Batch
-	(*MissingEntryRequest)(nil), // 4: protobufs.MissingEntryRequest
-	(*MissingEntry)(nil),        // 5: protobufs.MissingEntry
-	(*BucketSubscription)(nil),  // 6: protobufs.BucketSubscription
-	(*BucketAssignment)(nil),    // 7: protobufs.BucketAssignment
-	(*ListOfInt32)(nil),         // 8: protobufs.ListOfInt32
-	nil,                         // 9: protobufs.BucketAssignment.BucketsEntry
+	(*BalanceDelta)(nil),        // 1: protobufs.BalanceDelta
+	(*ClientResponse)(nil),      // 2: protobufs.ClientResponse
+	(*RequestID)(nil),           // 3: protobufs.RequestID
+	(*Batch)(nil),               // 4: protobufs.Batch
+	(*MissingEntryRequest)(nil), // 5: protobufs.MissingEntryRequest
+	(*MissingEntry)(nil),        // 6: protobufs.MissingEntry
+	(*BucketSubscription)(nil),  // 7: protobufs.BucketSubscription
+	(*BucketAssignment)(nil),    // 8: protobufs.BucketAssignment
+	(*ListOfInt32)(nil),         // 9: protobufs.ListOfInt32
+	nil,                         // 10: protobufs.BucketAssignment.BucketsEntry
 }
 var file_request_proto_depIdxs = []int32{
-	2, // 0: protobufs.ClientRequest.request_id:type_name -> protobufs.RequestID
-	0, // 1: protobufs.Batch.requests:type_name -> protobufs.ClientRequest
-	3, // 2: protobufs.MissingEntry.batch:type_name -> protobufs.Batch
-	9, // 3: protobufs.BucketAssignment.buckets:type_name -> protobufs.BucketAssignment.BucketsEntry
-	8, // 4: protobufs.BucketAssignment.BucketsEntry.value:type_name -> protobufs.ListOfInt32
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	3,  // 0: protobufs.ClientRequest.request_id:type_name -> protobufs.RequestID
+	1,  // 1: protobufs.ClientRequest.deltas:type_name -> protobufs.BalanceDelta
+	0,  // 2: protobufs.Batch.requests:type_name -> protobufs.ClientRequest
+	4,  // 3: protobufs.MissingEntry.batch:type_name -> protobufs.Batch
+	10, // 4: protobufs.BucketAssignment.buckets:type_name -> protobufs.BucketAssignment.BucketsEntry
+	9,  // 5: protobufs.BucketAssignment.BucketsEntry.value:type_name -> protobufs.ListOfInt32
+	6,  // [6:6] is the sub-list for method output_type
+	6,  // [6:6] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_request_proto_init() }
@@ -602,7 +686,7 @@ func file_request_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_request_proto_rawDesc), len(file_request_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

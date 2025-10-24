@@ -76,6 +76,7 @@ user_script_template_master=user-script-master.sh.template
 
 local_code_dir=".."
 local_code_files="
+$local_code_dir/account
 $local_code_dir/announcer
 $local_code_dir/checkpoint
 $local_code_dir/cmd
