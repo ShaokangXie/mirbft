@@ -1,21 +1,9 @@
 // Copyright 2022 IBM Corp. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Licensed under the Apache License, Version 2.0
 
 package account
 
 import (
-	"container/heap"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -24,46 +12,78 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	logger "github.com/rs/zerolog/log"
 )
 
-// ------------------------- 余额表（与原工程保持一致的最小接口） -------------------------
+///////////////////////////
+// 余额存储（64 分片）
+///////////////////////////
 
-// setBalance / getBalance 由 balance.go 提供全局 map 和锁；这里只给出最小实现占位
-// 若你已经有 balance.go（含 balMu/balance 等），请删除这两段占位实现，或保持一致。
-// var (
-// 	balMu   sync.RWMutex
-// 	balance = make(map[int32]float64)
-// )
-
-func setBalance(uid int32, amount float64) {
-	balMu.Lock()
-	balance[uid] = amount
-	balMu.Unlock()
+type balShard struct {
+	mu sync.RWMutex
+	m  map[int32]float64 // 为保持与 pb 兼容，内部仍用 float64
 }
 
-func getBalance(uid int32) float64 {
-	balMu.RLock()
-	v, ok := balance[uid]
+// 64 分片，降低写入锁竞争
+var balanceShards [64]balShard
 
-	balMu.RUnlock()
-	if !ok {
-		return 0.0
+func init() {
+	for i := range balanceShards {
+		balanceShards[i].m = make(map[int32]float64, 1024)
 	}
+	LoadData()
+}
+
+func shardOf(uid int32) *balShard { return &balanceShards[uid&63] }
+
+// 设置账户余额（覆盖）
+func setBalance(uid int32, amount float64) {
+	s := shardOf(uid)
+	s.mu.Lock()
+	s.m[uid] = amount
+	s.mu.Unlock()
+}
+
+// 读取账户余额；不存在返回 0
+func getBalance(uid int32) float64 {
+	s := shardOf(uid)
+	s.mu.RLock()
+	v := s.m[uid]
+	s.mu.RUnlock()
 	return v
 }
 
-// ------------------------- 事务聚合与去重 -------------------------
+// 原子地累加余额（持有对象级锁后调用）
+func addBalance(uid int32, delta float64) {
+	s := shardOf(uid)
+	s.mu.Lock()
+	s.m[uid] = s.m[uid] + delta
+	s.mu.Unlock()
+}
+
+func LoadData() {
+	// 这里示意性加载几条初始数据；你也可以替换为实际 CSV/DB。
+	setBalance(101, 0.0)
+	setBalance(202, 0.0)
+	setBalance(303, 0.0)
+
+	logger.Debug().Int("AccountCnt", 3).Msg("Loaded balance !")
+}
+
+///////////////////////////
+// tx 去重（和你现有一致）
+///////////////////////////
 
 type txKey = string // 用 RequestID 派生一个稳定 key
 
 type txSeen struct {
-	need int32             // 该 tx 需要的副本数
-	seen int32             // 已见副本数
-	req  *pb.ClientRequest // 持最后一份请求用于执行
+	need int32             // 该 tx 应当出现的实例集合（由上层计算）
+	seen int32             // 已经在哪些实例看到
+	req  *pb.ClientRequest // 最后一份完整请求用于执行
 }
 
 var (
@@ -71,7 +91,7 @@ var (
 	ErrInsufficientFunds = errors.New("insufficient funds")
 	ErrOverflow          = errors.New("float overflow")
 
-	mu      sync.Mutex
+	trkMu   sync.Mutex
 	tracker = make(map[txKey]*txSeen)
 )
 
@@ -84,25 +104,12 @@ func txDetKey(req *pb.ClientRequest) txKey {
 	return "pl:" + hex.EncodeToString(sum[:8])
 }
 
-func txOrderHash(k txKey) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(k))
-	return h.Sum64()
-}
-func lessTxKey(a, b txKey) bool {
-	ha, hb := txOrderHash(a), txOrderHash(b)
-	if ha == hb {
-		return a < b
-	}
-	return ha < hb
-}
-
-// 将本 entry 的请求并到全局计数，收齐副本的返回执行
 func UpdateAndCollectReady(reqs []*pb.ClientRequest) []*pb.ClientRequest {
-	mu.Lock()
-	defer mu.Unlock()
+	trkMu.Lock()
+	defer trkMu.Unlock()
 
 	ready := make([]*pb.ClientRequest, 0, len(reqs))
+
 	for _, req := range reqs {
 		if req == nil || len(req.Deltas) == 0 {
 			continue
@@ -120,239 +127,99 @@ func UpdateAndCollectReady(reqs []*pb.ClientRequest) []*pb.ClientRequest {
 		ts.seen++
 		if ts.seen >= ts.need {
 			ready = append(ready, ts.req)
-			delete(tracker, key)
+			delete(tracker, key) // 防止二次执行
 		}
 	}
 	return ready
 }
 
-// ------------------------- 轻量锁管理（2-cycle 检测） -------------------------
+///////////////////////////
+// 轻量对象锁（CAS 快路径）
+///////////////////////////
 
+// 每个对象(userId)一把 CAS 锁：owner=0 表示空闲；否则为 token
 type objLock struct {
-	owner txKey
-	waitQ *txMinHeap // 按 lessTxKey 的确定性顺序
-}
-type txMinHeap []txKey
-
-func (h txMinHeap) Len() int           { return len(h) }
-func (h txMinHeap) Less(i, j int) bool { return lessTxKey(h[i], h[j]) }
-func (h txMinHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *txMinHeap) Push(x any)        { *h = append(*h, x.(txKey)) }
-func (h *txMinHeap) Pop() any          { old := *h; x := old[len(old)-1]; *h = old[:len(old)-1]; return x }
-
-type engine struct {
-	mu      sync.Mutex
-	locks   map[int32]*objLock           // obj -> 锁
-	owners  map[txKey]map[int32]struct{} // tx -> 已持有对象
-	waiting map[txKey]map[int32]struct{} // tx -> 正在等待对象（反向索引）
-
-	waitCh map[txKey]chan struct{} // tx -> 等待通道（定向唤醒）
+	owner uint64 // 原子字段
 }
 
-var eng = &engine{
-	locks:   make(map[int32]*objLock),
-	owners:  make(map[txKey]map[int32]struct{}),
-	waiting: make(map[txKey]map[int32]struct{}),
-	waitCh:  make(map[txKey]chan struct{}),
-}
+var lockTable sync.Map // key=int32(uid) -> *objLock
 
-func (e *engine) ensureWaitChLocked(tk txKey) chan struct{} {
-	ch := e.waitCh[tk]
-	if ch == nil {
-		ch = make(chan struct{}, 1)
-		e.waitCh[tk] = ch
+func getLock(uid int32) *objLock {
+	if v, ok := lockTable.Load(uid); ok {
+		return v.(*objLock)
 	}
-	return ch
+	l := &objLock{}
+	if actual, _ := lockTable.LoadOrStore(uid, l); actual != nil {
+		return actual.(*objLock)
+	}
+	return l
 }
-func (e *engine) ensureWaitCh(tk txKey) chan struct{} {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.ensureWaitChLocked(tk)
+
+// 稳定 token：基于 txKey 的 FNV-1a 64 位哈希；0 保留
+func txOrderHash(k txKey) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(k))
+	return h.Sum64()
 }
-func (e *engine) notifyUnsafe(tk txKey) {
-	if ch, ok := e.waitCh[tk]; ok {
-		select {
-		case ch <- struct{}{}:
-		default:
-		}
+func tokenOf(tk txKey) uint64 {
+	t := txOrderHash(tk)
+	if t == 0 {
+		t = 1
+	}
+	return t
+}
+
+func casAcquire(l *objLock, me uint64) bool {
+	return atomic.CompareAndSwapUint64(&l.owner, 0, me)
+}
+func loadOwner(l *objLock) uint64 {
+	return atomic.LoadUint64(&l.owner)
+}
+func releaseOwner(l *objLock, me uint64) {
+	if atomic.LoadUint64(&l.owner) == me {
+		atomic.StoreUint64(&l.owner, 0)
 	}
 }
-func removeFromWaitQ(h *txMinHeap, tk txKey) bool {
-	for i, v := range *h {
-		if v == tk {
-			heap.Remove(h, i)
-			return true
-		}
-	}
-	return false
-}
 
-// 回滚本次 tryLockAll 已拿到的部分对象（需持有 e.mu）
-func (e *engine) releaseSubsetLocked(tk txKey, objs []int32) {
-	for _, obj := range objs {
-		ol := e.locks[obj]
-		if ol == nil || ol.owner != tk {
+// 按升序 keys 依次尝试拿锁；失败则释放已拿并返回
+func tryClaimAll(tk txKey, keys []int32) (ok bool, acquired []int32) {
+	me := tokenOf(tk)
+	acquired = make([]int32, 0, len(keys))
+	for _, id := range keys {
+		l := getLock(id)
+		if casAcquire(l, me) {
+			acquired = append(acquired, id)
 			continue
 		}
-		if ol.waitQ.Len() > 0 {
-			next := heap.Pop(ol.waitQ).(txKey)
-			ol.owner = next
-			if _, ok := e.owners[next]; !ok {
-				e.owners[next] = make(map[int32]struct{})
-			}
-			e.owners[next][obj] = struct{}{}
-			if w, ok := e.waiting[next]; ok {
-				delete(w, obj)
-				if len(w) == 0 {
-					delete(e.waiting, next)
-				}
-			}
-			e.notifyUnsafe(next)
-		} else {
-			ol.owner = ""
+		owner := loadOwner(l)
+		if owner == me {
+			continue // 已经持有
 		}
-		delete(e.owners[tk], obj)
+		// 冲突：放弃本轮，交给外层退避后重试
+		releaseAll(me, acquired)
+		return false, nil
+	}
+	return true, acquired
+}
+
+func releaseAll(me uint64, ids []int32) {
+	// 逆序释放可略减假共享（不是强要求）
+	for i := len(ids) - 1; i >= 0; i-- {
+		l := getLock(ids[i])
+		releaseOwner(l, me)
 	}
 }
 
-// 2-cycle 快检：owner 是否等待着 tk 正持有的任意对象？
-func (e *engine) hasTwoCycleLocked(tk, owner txKey) bool {
-	waits := e.waiting[owner]
-	if waits == nil {
-		return false
-	}
-	for obj := range waits {
-		if ol := e.locks[obj]; ol != nil && ol.owner == tk {
-			return true
-		}
-	}
-	return false
-}
-
-// 尝试拿齐 keys；若遇冲突，先做 2-cycle 快检，若自己是受害者则“放弃本次并回滚”。
-// 返回 (allAcquired, abortedSelf)
-func (e *engine) tryLockAll(tk txKey, keys []int32) (bool, bool) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	if _, ok := e.owners[tk]; !ok {
-		e.owners[tk] = make(map[int32]struct{}, len(keys))
-	}
-	if _, ok := e.waiting[tk]; !ok {
-		e.waiting[tk] = make(map[int32]struct{})
-	}
-
-	acquiredThisCall := make([]int32, 0, len(keys))
-	all := true
-
-	for _, obj := range keys {
-		if _, ok := e.owners[tk][obj]; ok {
-			continue
-		}
-		ol := e.locks[obj]
-		if ol == nil {
-			ol = &objLock{waitQ: &txMinHeap{}}
-			heap.Init(ol.waitQ)
-			e.locks[obj] = ol
-		}
-		if ol.owner == "" {
-			ol.owner = tk
-			e.owners[tk][obj] = struct{}{}
-			acquiredThisCall = append(acquiredThisCall, obj)
-			delete(e.waiting[tk], obj)
-			continue
-		}
-		if ol.owner == tk {
-			continue
-		}
-
-		owner := ol.owner
-
-		// ---- 2-cycle 快检：tk <-> owner 互等？ ----
-		if e.hasTwoCycleLocked(tk, owner) {
-			// 选受害者（确定性）：用 lessTxKey；更“年轻”的作为受害者
-			victim := owner
-			if lessTxKey(owner, tk) {
-				victim = tk
-			}
-			if victim == tk {
-				// 自己为受害者：回滚本次已拿到的锁，清理等待登记，放弃本次
-				e.releaseSubsetLocked(tk, acquiredThisCall)
-				if waits := e.waiting[tk]; waits != nil {
-					for o := range waits {
-						if l := e.locks[o]; l != nil && l.waitQ != nil {
-							removeFromWaitQ(l.waitQ, tk)
-						}
-					}
-					delete(e.waiting, tk)
-				}
-				return false, true // abortedSelf
-			}
-			// 对方为受害者：这里不去“强制剥夺”，保持 tk 正常排队等待，由对方未来释放/被外层重试处理
-		}
-
-		// 正常排队等待（去重）
-		if _, already := e.waiting[tk][obj]; !already {
-			heap.Push(ol.waitQ, tk)
-			e.waiting[tk][obj] = struct{}{}
-			e.ensureWaitChLocked(tk)
-		}
-		all = false
-	}
-	return all, false
-}
-
-func (e *engine) releaseAll(tk txKey) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	// 释放持有的对象
-	if owned := e.owners[tk]; owned != nil {
-		for obj := range owned {
-			if ol := e.locks[obj]; ol != nil && ol.owner == tk {
-				if ol.waitQ.Len() > 0 {
-					next := heap.Pop(ol.waitQ).(txKey)
-					ol.owner = next
-					if _, ok := e.owners[next]; !ok {
-						e.owners[next] = make(map[int32]struct{})
-					}
-					e.owners[next][obj] = struct{}{}
-					if w, ok := e.waiting[next]; ok {
-						delete(w, obj)
-						if len(w) == 0 {
-							delete(e.waiting, next)
-						}
-					}
-					e.notifyUnsafe(next)
-				} else {
-					ol.owner = ""
-				}
-			}
-		}
-	}
-
-	// 把 tk 从仍在等待的对象的队列中移除（防“僵尸等待者”）
-	if waits := e.waiting[tk]; waits != nil {
-		for obj := range waits {
-			if ol := e.locks[obj]; ol != nil && ol.waitQ != nil {
-				removeFromWaitQ(ol.waitQ, tk)
-			}
-		}
-	}
-
-	delete(e.owners, tk)
-	delete(e.waiting, tk)
-	delete(e.waitCh, tk)
-}
-
-// ------------------------- 执行路径 -------------------------
+///////////////////////////
+// 执行逻辑
+///////////////////////////
 
 func applyRequest(req *pb.ClientRequest) error {
 	if req == nil || len(req.Deltas) == 0 {
 		return nil
 	}
 
-	// 聚合 + 守恒
+	// 1) 聚合 & 守恒校验（仍是 float64，保持兼容）
 	agg := make(map[int32]float64, len(req.Deltas))
 	var sum float64
 	for _, d := range req.Deltas {
@@ -366,57 +233,59 @@ func applyRequest(req *pb.ClientRequest) error {
 		return ErrNonConserved
 	}
 
-	// 事务键 + 排序后的对象列表
-	tk := txDetKey(req)
+	// 2) 对象键升序，确保获得锁顺序一致（避免 ABA）
 	keys := make([]int32, 0, len(agg))
 	for uid := range agg {
 		keys = append(keys, uid)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 
-	// 拿齐锁；若未拿到且未被判为受害者，则等待定向唤醒并重试
-	for {
-		all, aborted := eng.tryLockAll(tk, keys)
-		if aborted {
-			return errors.New("aborted by 2-cycle resolver")
-		}
-		if all {
-			break
-		}
-		ch := eng.ensureWaitCh(tk)
-		select {
-		case <-ch:
-		case <-time.After(2 * time.Millisecond):
-		}
-	}
+	// 3) 确定性微退避（避免抖动，无需队列/通道）
+	tk := txDetKey(req)
+	me := tokenOf(tk)
+	backoff := time.Duration(txOrderHash(tk)%200+50) * time.Microsecond
 
-	// 执行（此处示例为直接写回；如需余额检查可解注下段）
-	// for uid, delta := range agg {
-	// 	if delta < 0 {
-	// 		if cur := getBalance(uid); cur+delta < -1e-12 {
-	// 			eng.releaseAll(tk)
-	// 			return fmt.Errorf("%w: uid=%d need=%f have=%f", ErrInsufficientFunds, uid, -delta, cur)
-	// 		}
-	// 	}
-	// }
-	for uid, delta := range agg {
-		cur := getBalance(uid)
-		setBalance(uid, cur+delta)
+	for {
+		ok, got := tryClaimAll(tk, keys)
+		if ok {
+			// 可选：余额充足校验（如需），否则直接写回
+			// for uid, delta := range agg {
+			// 	if delta < 0 && getBalance(uid)+delta < -1e-12 {
+			// 		releaseAll(me, got)
+			// 		return fmt.Errorf("%w: uid=%d", ErrInsufficientFunds, uid)
+			// 	}
+			// }
+			for uid, delta := range agg {
+				addBalance(uid, delta)
+			}
+			releaseAll(me, got)
+			return nil
+		}
+		// 退避后重试（确定性）
+		time.Sleep(backoff)
 	}
-	eng.releaseAll(tk)
-	return nil
 }
 
-// 批量提交（顺序执行，系统并行度由上一层 worker 池控制）
+// 批量提交：先去重，后顺序执行（并行度由上层 worker 池控制）
 func CommitEntry(requests []*pb.ClientRequest) {
+	logger.Debug().
+		Int("requestsLen", len(requests)).
+		Msg("account CommitEntry (CAS-light)")
+
 	ready := UpdateAndCollectReady(requests)
 	if len(ready) == 0 {
 		return
 	}
+
 	for _, r := range ready {
 		if err := applyRequest(r); err != nil {
 			logger.Error().Err(err).Msg("applyRequest failed")
 		}
 	}
-	logger.Info().Int("executedReady", len(ready)).Msg("CommitEntryWithInstance done")
+
+	// 示例：读取一个账户看结果
+	logger.Info().
+		Float64("TotalAmount(uid=101)", getBalance(101)).
+		Int("executedReady", len(ready)).
+		Msg("CommitEntry done")
 }

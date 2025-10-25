@@ -19,12 +19,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	logger "github.com/rs/zerolog/log"
+	"sort"
+
 	"github.com/hyperledger-labs/mirbft/log"
 	"github.com/hyperledger-labs/mirbft/manager"
 	"github.com/hyperledger-labs/mirbft/membership"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
-	"sort"
+	logger "github.com/rs/zerolog/log"
 )
 
 // Represents a PBFT Orderer implementation.
@@ -33,7 +34,7 @@ type PbftOrderer struct {
 	dispatcher  pbftDispatcher       // map[int32]*pbftInstance
 	backlog     backlog              // map[int32]chan*ordererMsg
 	last        int32                // Some sequence number we can ignere messages above
-	commitTime  time.Duration		 // Median commit duration
+	commitTime  time.Duration        // Median commit duration
 	lock        sync.Mutex
 }
 
@@ -53,7 +54,9 @@ func (d *pbftDispatcher) store(key int32, value *pbftInstance) {
 }
 
 func (d *pbftDispatcher) delete(key int32) {
-	d.mm.Delete(key)
+	if _, ok := d.mm.Load(key); ok {
+		d.mm.Delete(key)
+	}
 }
 
 // HandleMessage is called by the messenger each time an Orderer-issued message is received over the network.
@@ -231,6 +234,12 @@ func (po *PbftOrderer) killSegment(seg manager.Segment) {
 		return
 	}
 
+	// A. 标记“将要销毁”，让所有未触发/即将触发的回调先自我短路
+	atomic.StoreUint32(&pi.destroyed, 1)
+
+	// B. 先停所有定时器（必须）
+	pi.stopAllTimers() // 把 checkpointTimer + 每个 batch 的 viewChangeTimer 都 Stop 并置 nil
+
 	// Close the message channel for the segment
 	logger.Info().Int("segID", seg.SegID()).Msg("Closing message serializers.")
 
@@ -238,6 +247,7 @@ func (po *PbftOrderer) killSegment(seg manager.Segment) {
 	pi.serializer.stop()
 	pi.stopProposing()
 
+	// D. 正常做 po.last、backlog GC、median commit 统计等（你已有）
 	po.setMedianCommitTime(seg)
 	logger.Info().Int("segID", seg.SegID()).Int64("commit", int64(po.commitTime)).Msg("Median commit time")
 
@@ -245,6 +255,13 @@ func (po *PbftOrderer) killSegment(seg manager.Segment) {
 	for _, sn := range seg.SNs() {
 		po.dispatcher.delete(sn)
 	}
+
+	time.Sleep(5 * time.Second) // 等待所有消息处理完毕（足够长时间即可）
+	// E. 清理日志内存（放到 killSegment 里）
+	log.FreeOldEntries(seg.FirstSN(), seg.LastSN())
+
+	// F. 轻量释放引用（不要动 serializer；或最后动）
+	pi.freeMemory() // 这个函数里不做 GC、不关通道、不置 serializer=nil
 }
 
 func (po *PbftOrderer) Sign(data []byte) ([]byte, error) {
@@ -259,10 +276,31 @@ func (po *PbftOrderer) CheckSig(data []byte, senderID int32, signature []byte) e
 
 func (po *PbftOrderer) setMedianCommitTime(seg manager.Segment) {
 	commits := make([]time.Duration, 0, 0)
+	missing := 0
+
 	for _, sn := range seg.SNs() {
-		duration := log.GetEntry(sn).CommitTs - log.GetEntry(sn).ProposeTs
-		logger.Info().Int32("sn", sn).Int64("commitTs", log.GetEntry(sn).CommitTs).Int64("proposeTs", log.GetEntry(sn).ProposeTs).Int64("duration", duration).Msg("Statistics")
-		commits = append(commits, time.Duration(duration) * time.Nanosecond)
+		e := log.GetEntry(sn)
+		if e == nil {
+			missing++
+			// 建议：只记录一次，避免刷屏
+			if missing == 1 {
+				logger.Warn().Int("segID", seg.SegID()).
+					Msg("Some log entries missing while computing commit median; will skip them.")
+			}
+			continue
+		}
+		duration := e.CommitTs - e.ProposeTs
+		// 过滤掉异常/未填充的数据
+		if duration <= 0 {
+			continue
+		}
+		logger.Info().
+			Int32("sn", sn).
+			Int64("commitTs", e.CommitTs).
+			Int64("proposeTs", e.ProposeTs).
+			Int64("duration", duration).
+			Msg("Statistics")
+		commits = append(commits, time.Duration(duration)*time.Nanosecond)
 	}
 	sort.Slice(commits, func(i, j int) bool { return commits[i] < commits[j] })
 	po.commitTime = commits[len(commits)/2]

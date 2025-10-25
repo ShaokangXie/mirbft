@@ -17,9 +17,8 @@ package orderer
 import (
 	"bytes"
 	"fmt"
-	"runtime"
-	"runtime/debug"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -69,6 +68,8 @@ type pbftInstance struct {
 	//	next              int // The index  of the next to be proposed SN
 	startTs        int64 // Timestamp of the start of the instance. Used for estimating duration of segment.
 	readyToPropose chan struct{}
+	freed          uint32
+	destroyed      uint32
 }
 
 type pbftBatch struct {
@@ -124,7 +125,12 @@ func (pi *pbftInstance) setNewViewTimer(view int32) {
 			}},
 	}
 
-	pi.viewChange[view].newViewTimer = time.AfterFunc(pi.viewChangeTimeout, func() { pi.serializer.serialize(timeoutMsg) })
+	pi.viewChange[view].newViewTimer = time.AfterFunc(pi.viewChangeTimeout, func() {
+		if pi.isDestroyed() {
+			return
+		}
+		pi.serializer.serialize(timeoutMsg)
+	})
 }
 
 func (pi *pbftInstance) setCheckpointTimer() {
@@ -144,7 +150,12 @@ func (pi *pbftInstance) setCheckpointTimer() {
 		logger.Warn().Int32("view", pi.view).Msg("Overriding checkpoint timer.")
 	}
 
-	pi.checkpointTimer = time.AfterFunc(pi.viewChangeTimeout, func() { pi.serializer.serialize(msg) })
+	pi.checkpointTimer = time.AfterFunc(pi.viewChangeTimeout, func() {
+		if pi.isDestroyed() {
+			return
+		}
+		pi.serializer.serialize(msg)
+	})
 }
 
 // Start initializes the Pbft instance
@@ -152,7 +163,7 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	// Next indext of sn of the segment to propose
 	// pi.next = 0
 
-	pi.freeMemory()
+	// pi.freeMemory()
 
 	// Attach segment to the instance
 	pi.segment = seg
@@ -192,60 +203,57 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	pi.readyToPropose = make(chan struct{})
 }
 
-func (pi *pbftInstance) freeMemory() {
-	// 删除嵌套的 map
-	for k := range pi.batches {
-		for j := range pi.batches[k] {
-			delete(pi.batches[k], j)
-		}
-		// 将内层 map 置为 nil
-		pi.batches[k] = nil
+func (pi *pbftInstance) isDestroyed() bool {
+	return atomic.LoadUint32(&pi.destroyed) == 1
+}
+
+func (pi *pbftInstance) stopAllTimers() {
+	if pi.checkpointTimer != nil {
+		pi.checkpointTimer.Stop()
+		pi.checkpointTimer = nil
 	}
-	// 将外部 map 置为 nil
+	for _, vv := range pi.batches {
+		for _, b := range vv {
+			if b != nil && b.viewChangeTimer != nil {
+				b.viewChangeTimer.Stop()
+				b.viewChangeTimer = nil
+			}
+		}
+	}
+}
+
+// 仅清理引用，不做 GC/FreeOSMemory，不做日志清理
+func (pi *pbftInstance) freeMemory() {
+	// 清 timers 的引用（真正的 Stop 在 killSegment 调）
+	pi.checkpointTimer = nil
+
+	// 断开大结构引用
+	for v := range pi.batches {
+		for sn := range pi.batches[v] {
+			// 清掉批次内的定时器引用即可，Stop 在外面做
+			if pi.batches[v][sn] != nil {
+				pi.batches[v][sn].viewChangeTimer = nil
+			}
+		}
+	}
 	pi.batches = nil
 
-	runtime.GC()
-	debug.FreeOSMemory()
-
-	for k := range pi.checkpointMsgs {
-		delete(pi.checkpointMsgs, k)
-	}
 	pi.checkpointMsgs = nil
-
-	runtime.GC()
-	debug.FreeOSMemory()
-
-	for k := range pi.checkpointDigests {
-		delete(pi.checkpointDigests, k)
-	}
 	pi.checkpointDigests = nil
-
-	runtime.GC()
-	debug.FreeOSMemory()
-
-	for k := range pi.viewChange {
-		delete(pi.viewChange, k)
-	}
+	pi.finalDigests = nil
 	pi.viewChange = nil
 
-	runtime.GC()
-	debug.FreeOSMemory()
-
 	if pi.backlog != nil {
-		for k := range pi.backlog.backlogMsgs {
-			delete(pi.backlog.backlogMsgs, k)
-		}
 		pi.backlog.backlogMsgs = nil
-		runtime.GC()
-		debug.FreeOSMemory()
+		pi.backlog = nil
 	}
 
-	if pi.segment != nil {
-		log.FreeOldEntries(pi.segment.FirstSN(), pi.segment.LastSN())
-	}
-
-	runtime.GC()
-	debug.FreeOSMemory()
+	// 这些 runtime 对象/引用也断掉，便于 GC
+	pi.segment = nil
+	pi.serializer = nil
+	pi.priority = nil
+	pi.cutBatch = nil
+	pi.readyToPropose = nil
 }
 
 func (pi *pbftInstance) lead() {
@@ -448,8 +456,9 @@ func (pi *pbftInstance) handlePreprepare(preprepare *pb.PbftPreprepare, msg *pb.
 
 	if batch.batch == nil {
 		logger.Error().Int32("peerId", senderID).Int32("sn", sn).Msg("Invalid requests in proposal.")
-		pi.sendViewChange()
-		return fmt.Errorf("proposal from %d contains invalid requests", senderID)
+		batch.batch = request.NewBatch(&pb.Batch{Requests: []*pb.ClientRequest{}})
+		// pi.sendViewChange()
+		// return fmt.Errorf("proposal from %d contains invalid requests", senderID)
 	}
 	// Check that proposal does not contain preprepared ("in flight") requests.
 	if err := batch.batch.CheckInFlight(); err != nil {
@@ -2049,7 +2058,12 @@ func (pi *pbftInstance) setViewChangeTimer(sn int32, after time.Duration) {
 				View: pi.view,
 			}},
 	}
-	batch.viewChangeTimer = time.AfterFunc(pi.viewChangeTimeout+after, func() { pi.serializer.serialize(msg) })
+	batch.viewChangeTimer = time.AfterFunc(pi.viewChangeTimeout+after, func() {
+		if pi.isDestroyed() {
+			return
+		}
+		pi.serializer.serialize(msg)
+	})
 }
 
 // Looks for the most recent batch with a preprepare message with sequence number sn in previous views.

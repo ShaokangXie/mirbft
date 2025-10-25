@@ -83,7 +83,7 @@ func NewMirManager() *MirManager {
 	return &MirManager{
 		epoch:               0,
 		leaderPolicy:        NewLeaderPolicy(config.Config.LeaderPolicy),
-		segmentChannel:      make(chan Segment),
+		segmentChannel:      make(chan Segment, membership.NumNodes()),
 		checkpointSNChannel: make(chan int32),
 		nextSegmentID:       0,
 		entriesChannel:      log.EntriesOutOfOrder(),
@@ -134,10 +134,10 @@ func (mm *MirManager) SubscribeCheckpointer() chan int32 {
 func (mm *MirManager) handleLogEntries(wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	lastEpochSN := config.Config.EpochLength - 1
-	if config.Config.SegmentLength != 0 {
-		lastEpochSN = (config.Config.SegmentLength * len(mm.leaderPolicy.GetLeaders(0))) - 1
-	}
+	// lastEpochSN := config.Config.EpochLength - 1
+	// if config.Config.SegmentLength != 0 {
+	// 	lastEpochSN = (config.Config.SegmentLength * len(mm.leaderPolicy.GetLeaders(0))) - 1
+	// }
 
 	var stableCheckpoints chan *pb.StableCheckpoint = nil
 	if config.Config.WaitForCheckpoints {
@@ -210,39 +210,39 @@ func (mm *MirManager) handleLogEntries(wg *sync.WaitGroup) {
 					}
 				}
 
-				// When the log contains entries for all the current epoch, we can advance watermarks,
-				// garbage-collect old requests and compute the new batch size.
-				// We do it here instead of in the handleCheckpoints() method, because:
-				// - It can happen concurrently with the checkpoint protocol
-				// - The Entry buffer must have received all entries of the epoch before calling Get() on it.
-				//   If we called from within handleCheckpoints(), it might (and did) happen that a stable checkpoint
-				//   is ready before the handleLogEntries() function flushes everything necessary in the Entry buffer.
-				//   Waiting for the last entry using log.WaitForEntry() inside handleCheckpoints() does not help,
-				//   as some entries might be published by the log, but not added to the Entry buffer by handleLogEntries()
-				//   before Get() is called from handleCheckpoints.
-				epochEntries := mm.epochEntryBuffer.Get()
-				request.AdvanceWatermarks(epochEntries)
+				// // When the log contains entries for all the current epoch, we can advance watermarks,
+				// // garbage-collect old requests and compute the new batch size.
+				// // We do it here instead of in the handleCheckpoints() method, because:
+				// // - It can happen concurrently with the checkpoint protocol
+				// // - The Entry buffer must have received all entries of the epoch before calling Get() on it.
+				// //   If we called from within handleCheckpoints(), it might (and did) happen that a stable checkpoint
+				// //   is ready before the handleLogEntries() function flushes everything necessary in the Entry buffer.
+				// //   Waiting for the last entry using log.WaitForEntry() inside handleCheckpoints() does not help,
+				// //   as some entries might be published by the log, but not added to the Entry buffer by handleLogEntries()
+				// //   before Get() is called from handleCheckpoints.
+				// epochEntries := mm.epochEntryBuffer.Get()
+				// request.AdvanceWatermarks(epochEntries)
 
-				// Only after the watermarks are up to date, we can move on to the next epoch and create new segments.
-				// This cannot happen before or even concurrently, as the orderers might misinterpret incoming messages
-				// if all the state is not up to date.
-				mm.mu.Lock()
-				mm.epoch++
-				mm.currentSuspects = make(map[int32]bool)
-				startSN := targetSN + 1
-				mm.mu.Unlock()
+				// // Only after the watermarks are up to date, we can move on to the next epoch and create new segments.
+				// // This cannot happen before or even concurrently, as the orderers might misinterpret incoming messages
+				// // if all the state is not up to date.
+				// mm.mu.Lock()
+				// mm.epoch++
+				// mm.currentSuspects = make(map[int32]bool)
+				// startSN := targetSN + 1
+				// mm.mu.Unlock()
 
-				newLeaders := mm.leaderPolicy.GetLeaders(mm.epoch)
+				// newLeaders := mm.leaderPolicy.GetLeaders(mm.epoch)
 
-				logger.Debug().Int32("sn", startSN).Int32("epoch", mm.epoch).Msg("Issuing new segments.")
-				mm.issueSegments(epochEntries, newLeaders, startSN)
-				tracing.MainTrace.Event(tracing.NEW_EPOCH, int64(mm.epoch), int64(len(newLeaders)))
+				// logger.Info().Int32("sn", startSN).Int32("epoch", mm.epoch).Msg("Issuing new segments.")
+				// mm.issueSegments(epochEntries, newLeaders, startSN)
+				// tracing.MainTrace.Event(tracing.NEW_EPOCH, int64(mm.epoch), int64(len(newLeaders)))
 
-				if config.Config.SegmentLength != 0 {
-					lastEpochSN += config.Config.SegmentLength * len(newLeaders)
-				} else {
-					lastEpochSN += config.Config.EpochLength
-				}
+				// if config.Config.SegmentLength != 0 {
+				// 	lastEpochSN += config.Config.SegmentLength * len(newLeaders)
+				// } else {
+				// 	lastEpochSN += config.Config.EpochLength
+				// }
 			} else {
 				mm.mu.Unlock()
 			}
@@ -257,17 +257,30 @@ func (mm *MirManager) handleLogEntries(wg *sync.WaitGroup) {
 // Decrements the provided wait group when done.
 func (mm *MirManager) handleCheckpoints(wg *sync.WaitGroup) {
 	defer wg.Done()
-
-	// On each new checkpoint, issue new segments and advance client watermarks
-	// Checkpoint channel should be closed on shutdown for this loop to exit.
 	for chkp := <-mm.checkpointChannel; chkp != nil; chkp = <-mm.checkpointChannel {
-
 		logger.Info().Int32("sn", chkp.Sn).Msg("Received stable checkpoint notification.")
 
-		// Catch up with the checkpoint if necessary.
-		// This is crucial if this peer becomes part of a minority that has fallen behind on a segment
-		// and was left behind. (E.g., for PBFT, if this node is the only one to have initiated a view change.)
-		statetransfer.CatchUp(chkp)
+		// 先做 state transfer / catchup（让慢副本先同步到 checkpoint）
+		go statetransfer.CatchUp(chkp)
+
+		// —— 统一推进水位 & 发新 segments ——
+		// 这一步在每个副本本地、在“稳定 checkpoint 已确认”之后进行
+
+		// 先把上一轮 entries flush 出来并推进客户端水位
+		epochEntries := mm.epochEntryBuffer.Get()
+		request.AdvanceWatermarks(epochEntries)
+
+		// 进入下一轮
+		mm.mu.Lock()
+		mm.epoch++
+		mm.currentSuspects = make(map[int32]bool)
+		startSN := chkp.Sn + 1
+		mm.mu.Unlock()
+
+		newLeaders := mm.leaderPolicy.GetLeaders(mm.epoch)
+		logger.Info().Int32("sn", startSN).Int32("epoch", mm.epoch).Msg("Issuing new segments.")
+		mm.issueSegments(epochEntries, newLeaders, startSN)
+		tracing.MainTrace.Event(tracing.NEW_EPOCH, int64(mm.epoch), int64(len(newLeaders)))
 	}
 }
 
@@ -295,6 +308,7 @@ func (mm *MirManager) issueSegments(oldEpochEntries []interface{}, leaders []int
 		//} else {
 		//	mm.segmentChannel <- segment
 		//}
+		logger.Info().Int("segID", segment.SegID()).Interface("sns", segment.SNs()).Msg("Announcing segment.")
 		mm.segmentChannel <- segment
 	}
 	// --- NEW: 记录当前轮的 leaders、每个 segment 的“末 SN”、以及本轮的 lastEpochSN

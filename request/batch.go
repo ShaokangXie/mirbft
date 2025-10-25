@@ -94,7 +94,8 @@ func NewBatch(msg *pb.Batch) *Batch {
 				Int32("ClientId", reqMsg.RequestId.ClientId).
 				Int32("ClientSn", reqMsg.RequestId.ClientSn).
 				Msg("Invalid batch. Could not add / look up request.")
-			return nil
+			return &Batch{Requests: []*Request{}}
+			// return nil
 		}
 		newBatch.Requests[i] = req
 	}
