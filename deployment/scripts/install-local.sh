@@ -36,26 +36,29 @@ EOF
 
 # echo "Installing golang packages. (May take a long time without producing output.)"
 
-# echo "Installing gRPC for Go."
-# go install google.golang.org/grpc@latest
+echo "Installing gRPC for Go."
+go install google.golang.org/grpc@latest
 
-# echo "Installing Protobufs for Go."
-# go install github.com/golang/protobuf/protoc-gen-go
+echo "Installing Protobufs for Go."
+go install github.com/golang/protobuf/protoc-gen-go
 
-# echo "Installing Zerolog for Go."
-# go install github.com/rs/zerolog/log@latest
+echo "Installing Zerolog for Go."
+go install github.com/rs/zerolog/log@latest
 
-# echo "Installing Linux Goprocinfo for Go"
-# go install github.com/c9s/goprocinfo/linux@latest
+echo "Installing Linux Goprocinfo for Go"
+go install github.com/c9s/goprocinfo/linux@latest
 
-# echo "Installing Kyber for Go"
-# go install go.dedis.ch/kyber@latest
-# go install go.dedis.ch/fixbuf@latest
-# go install golang.org/x/crypto/blake2b@latest
+echo "Installing Kyber for Go"
+go install go.dedis.ch/kyber@latest
+go install go.dedis.ch/fixbuf@latest
+go install golang.org/x/crypto/blake2b@latest
 
-# echo "Installing the YAML parser for Go"
-# go install gopkg.in/yaml.v2@latest
+echo "Installing the YAML parser for Go"
+go install gopkg.in/yaml.v2@latest
 
-# go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-# go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
-# 让 protoc 能找到插件
+go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+go mod init
+go mod tidy
+echo "Installation complete."

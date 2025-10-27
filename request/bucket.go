@@ -265,7 +265,7 @@ func (b *Bucket) append(r *Request) {
 func (b *Bucket) Prepend(req *Request) {
 	b.Lock()
 	defer b.Unlock()
-	// 1) 校验这条请求理论上应该落在哪个 bucket（rep 字段必须与索引一致）
+	// 1) Check that the request belongs to this bucket
 	exp := GetBucketNr(req.Msg.Deltas[req.Msg.RequestId.ClientReplicationId].UserId)
 	if exp != b.id {
 		logger.Error().
@@ -282,7 +282,7 @@ func (b *Bucket) Prepend(req *Request) {
 		req.Msg.RequestId.ClientSn,
 		req.Msg.RequestId.ClientReplicationId)
 
-	// 2) 索引不存在就补一条，不再 panic
+	// 2) Ensure that the request is in the index
 	if _, ok := b.reqIndex[reqID]; !ok {
 		logger.Warn().
 			Int("bucketId", b.id).
@@ -470,7 +470,7 @@ func (b *Bucket) PruneIndex(watermarks *sync.Map) {
 				Msg("PruneIndex: nil request pointer; skipping")
 			continue
 		}
-		// ★ 任何在飞中的请求（无论哪个 repID）一律跳过
+		// Skip in-flight requests
 		if r.InFlight {
 			continue
 		}
@@ -480,14 +480,14 @@ func (b *Bucket) PruneIndex(watermarks *sync.Map) {
 			continue
 		}
 
-		// 避免误删其它桶的 key（你的分桶包含 repID 的话，这里必须一致）
+		// Must belong to this bucket
 		if GetBucketNr(r.Msg.Deltas[r.Msg.RequestId.ClientReplicationId].UserId) != b.id {
 			continue
 		}
 
-		// ★ 如果这个请求仍挂在当前桶的链表里，先把它摘掉
+		// Remove from the doubly linked list if present
 		if r == b.FirstRequest || r.Prev != nil || r.Next != nil {
-			b.removeNoLock(r) // 会维护 Prev/Next/numRequests
+			b.removeNoLock(r)
 			removedList++
 		}
 

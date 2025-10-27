@@ -16,6 +16,7 @@ package request
 
 import (
 	"encoding/binary"
+	"math/rand"
 	"sync"
 
 	"github.com/golang/protobuf/proto"
@@ -88,15 +89,20 @@ func Init() {
 		requestInputChannels[i] = make(chan *pb.ClientRequest, config.Config.RequestInputChannelBuffer)
 		go func(i int) {
 			for req := range requestInputChannels[i] {
-				for i := 0; i < int(req.RequestId.ClientReplication); i++ {
-					cloneReq := proto.Clone(req).(*pb.ClientRequest)
-					cloneReq.RequestId.ClientReplicationId = int32(i)
-					logger.Debug().Int32("clId", cloneReq.RequestId.ClientId).
-						Int32("clSn", cloneReq.RequestId.ClientSn).
-						Int32("clRepId", cloneReq.RequestId.ClientReplicationId).
-						Int32("clRep", cloneReq.RequestId.ClientReplication).
-						Msg("Handling replicated request.")
-					AddReqMsg(cloneReq)
+				if rand.Intn(100) <= 100 {
+					for i := 0; i < int(req.RequestId.ClientReplication); i++ {
+						cloneReq := proto.Clone(req).(*pb.ClientRequest)
+						cloneReq.RequestId.ClientReplicationId = int32(i)
+						logger.Debug().Int32("clId", cloneReq.RequestId.ClientId).
+							Int32("clSn", cloneReq.RequestId.ClientSn).
+							Int32("clRepId", cloneReq.RequestId.ClientReplicationId).
+							Int32("clRep", cloneReq.RequestId.ClientReplication).
+							Msg("Handling replicated request.")
+						AddReqMsg(cloneReq)
+					}
+				} else {
+					req.RequestId.ClientReplication = 1
+					AddReqMsg(req)
 				}
 				// AddReqMsg(req)
 			}

@@ -10,3 +10,5 @@ deployment-data
 
 protobufs/*.pb.go
 *.pb.go
+
+experiment-output

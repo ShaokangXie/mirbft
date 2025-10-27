@@ -20,11 +20,11 @@ import (
 	"io"
 	"sync"
 
-	"github.com/rs/zerolog"
-	logger "github.com/rs/zerolog/log"
 	"github.com/hyperledger-labs/mirbft/config"
 	"github.com/hyperledger-labs/mirbft/membership"
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
+	"github.com/rs/zerolog"
+	logger "github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
@@ -52,7 +52,6 @@ func (ms *messengerServer) Request(srv pb.Messenger_RequestServer) error {
 	if Crashed {
 		return nil
 	}
-
 
 	// Log address of incoming connection.
 	p, ok := peer.FromContext(srv.Context())
@@ -190,10 +189,10 @@ func RespondToClient(clientID int32, response *pb.ClientResponse) {
 		if err := srv.(pb.Messenger_RequestServer).Send(response); err != nil {
 
 			// Log sending error.
-			logger.Error().
-				Err(err).
-				Int32("clientID", clientID).
-				Msg("Error responding to client. No connection present.")
+			// logger.Error().
+			// 	Err(err).
+			// 	Int32("clientID", clientID).
+			// 	Msg("Error responding to client. No connection present.")
 		}
 	} else {
 		// Log error if connection is not present.

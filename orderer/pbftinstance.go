@@ -68,7 +68,6 @@ type pbftInstance struct {
 	//	next              int // The index  of the next to be proposed SN
 	startTs        int64 // Timestamp of the start of the instance. Used for estimating duration of segment.
 	readyToPropose chan struct{}
-	freed          uint32
 	destroyed      uint32
 }
 
@@ -200,7 +199,11 @@ func (pi *pbftInstance) init(seg manager.Segment, orderer *PbftOrderer) {
 	// Set the starting timestamp
 	pi.startTs = time.Now().UnixNano()
 
-	pi.readyToPropose = make(chan struct{})
+	// pi.readyToPropose = make(chan struct{}, 8)
+	// for i := 0; i < 7; i++ {
+	// 	// Initialize the readyToPropose channel with 7 tokens
+	// 	pi.readyToPropose <- struct{}{}
+	// }
 }
 
 func (pi *pbftInstance) isDestroyed() bool {
@@ -222,15 +225,13 @@ func (pi *pbftInstance) stopAllTimers() {
 	}
 }
 
-// 仅清理引用，不做 GC/FreeOSMemory，不做日志清理
 func (pi *pbftInstance) freeMemory() {
-	// 清 timers 的引用（真正的 Stop 在 killSegment 调）
+	// clear checkpoint timer
 	pi.checkpointTimer = nil
 
-	// 断开大结构引用
+	// clear batches and their timers
 	for v := range pi.batches {
 		for sn := range pi.batches[v] {
-			// 清掉批次内的定时器引用即可，Stop 在外面做
 			if pi.batches[v][sn] != nil {
 				pi.batches[v][sn].viewChangeTimer = nil
 			}
@@ -243,12 +244,11 @@ func (pi *pbftInstance) freeMemory() {
 	pi.finalDigests = nil
 	pi.viewChange = nil
 
-	if pi.backlog != nil {
-		pi.backlog.backlogMsgs = nil
-		pi.backlog = nil
-	}
+	// if pi.backlog != nil {
+	// 	pi.backlog.backlogMsgs = nil
+	// 	pi.backlog = nil
+	// }
 
-	// 这些 runtime 对象/引用也断掉，便于 GC
 	pi.segment = nil
 	pi.serializer = nil
 	pi.priority = nil
@@ -258,7 +258,7 @@ func (pi *pbftInstance) freeMemory() {
 
 func (pi *pbftInstance) lead() {
 
-	logger.Debug().Int("segID", pi.segment.SegID()).Msg("Leading segment.")
+	logger.Info().Int("segID", pi.segment.SegID()).Msg("Leading segment.")
 	batchSize := pi.segment.BatchSize()
 
 	// Simulate a straggler.
@@ -275,6 +275,13 @@ func (pi *pbftInstance) lead() {
 
 	// Send a proposal for each sequence number in the Segment.
 	for _, sn := range pi.segment.SNs() {
+		// Wait until allowed to propose for sn
+		if sn == pi.segment.FirstSN() {
+			time.Sleep(1000 * time.Millisecond)
+		}
+		// else {
+		// 	<-pi.readyToPropose
+		// }
 
 		// Wait for a batch to be ready.
 		// We must not cut the batch now, as, in case of a view change,
@@ -736,11 +743,13 @@ func (pi *pbftInstance) announce(batch *pbftBatch, sn int32, reqBatch *pb.Batch,
 	// Mark batch as committed.
 	batch.committed = true
 
-	// if batch.preprepareMsg.Leader == membership.OwnID {
-	// 	go func() {
-	// 		logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
-	// 		pi.readyToPropose <- struct{}{}
-	// 	}()
+	// if batch.preprepareMsg != nil {
+	// 	if batch.preprepareMsg.Leader == membership.OwnID {
+	// 		go func() {
+	// 			logger.Debug().Int32("sn", sn).Msg("sn committed. Ready to propose next sn!")
+	// 			pi.readyToPropose <- struct{}{}
+	// 		}()
+	// 	}
 	// }
 
 	// Remove batch requests

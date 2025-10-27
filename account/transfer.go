@@ -1,9 +1,21 @@
 // Copyright 2022 IBM Corp. All Rights Reserved.
-// Licensed under the Apache License, Version 2.0
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package account
 
 import (
+	"container/heap"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -12,103 +24,80 @@ import (
 	"math"
 	"sort"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	pb "github.com/hyperledger-labs/mirbft/protobufs"
 	logger "github.com/rs/zerolog/log"
 )
 
-///////////////////////////
-// 余额存储（64 分片）
-///////////////////////////
-
-type balShard struct {
-	mu sync.RWMutex
-	m  map[int32]float64 // 为保持与 pb 兼容，内部仍用 float64
-}
-
-// 64 分片，降低写入锁竞争
-var balanceShards [64]balShard
-
-func init() {
-	for i := range balanceShards {
-		balanceShards[i].m = make(map[int32]float64, 1024)
-	}
-	LoadData()
-}
-
-func shardOf(uid int32) *balShard { return &balanceShards[uid&63] }
-
-// 设置账户余额（覆盖）
-func setBalance(uid int32, amount float64) {
-	s := shardOf(uid)
-	s.mu.Lock()
-	s.m[uid] = amount
-	s.mu.Unlock()
-}
-
-// 读取账户余额；不存在返回 0
-func getBalance(uid int32) float64 {
-	s := shardOf(uid)
-	s.mu.RLock()
-	v := s.m[uid]
-	s.mu.RUnlock()
-	return v
-}
-
-// 原子地累加余额（持有对象级锁后调用）
-func addBalance(uid int32, delta float64) {
-	s := shardOf(uid)
-	s.mu.Lock()
-	s.m[uid] = s.m[uid] + delta
-	s.mu.Unlock()
-}
-
-func LoadData() {
-	// 这里示意性加载几条初始数据；你也可以替换为实际 CSV/DB。
-	setBalance(101, 0.0)
-	setBalance(202, 0.0)
-	setBalance(303, 0.0)
-
-	logger.Debug().Int("AccountCnt", 3).Msg("Loaded balance !")
-}
-
-///////////////////////////
-// tx 去重（和你现有一致）
-///////////////////////////
-
-type txKey = string // 用 RequestID 派生一个稳定 key
-
-type txSeen struct {
-	need int32             // 该 tx 应当出现的实例集合（由上层计算）
-	seen int32             // 已经在哪些实例看到
-	req  *pb.ClientRequest // 最后一份完整请求用于执行
-}
-
 var (
+	balMu   sync.RWMutex
+	balance = make(map[int32]float64)
+
 	ErrNonConserved      = errors.New("sum(deltas) must be 0 (fee excluded)")
 	ErrInsufficientFunds = errors.New("insufficient funds")
 	ErrOverflow          = errors.New("float overflow")
-
-	trkMu   sync.Mutex
-	tracker = make(map[txKey]*txSeen)
+	mu                   sync.Mutex
+	tracker              = make(map[txKey]*txSeen)
 )
 
+func setBalance(uid int32, amount float64) {
+	balMu.Lock()
+	balance[uid] = amount
+	balMu.Unlock()
+}
+
+// getBalance returns the current balance for a given user ID.
+func getBalance(uid int32) float64 {
+	balMu.RLock()
+	v, ok := balance[uid]
+	balMu.RUnlock()
+	if !ok {
+		return 0.0
+	}
+	return v
+}
+
+type txKey = string // derive a stable key from RequestID
+
+type txSeen struct {
+	need int32             // expected replication count for this tx (number of instances it should appear in)
+	seen int32             // how many instances have already seen it
+	req  *pb.ClientRequest // keep the last full request for execution
+}
+
 func txDetKey(req *pb.ClientRequest) txKey {
+	// Build a stable key from the RequestID triple (same as previous version)
 	if rid := req.GetRequestId(); rid != nil {
 		return fmt.Sprintf("cid=%d/sn=%d/rep=%d",
 			rid.GetClientId(), rid.GetClientSn(), rid.GetClientReplication())
 	}
+	// Fallback: hash of the payload
 	sum := sha256.Sum256(req.GetPayload())
 	return "pl:" + hex.EncodeToString(sum[:8])
 }
 
-func UpdateAndCollectReady(reqs []*pb.ClientRequest) []*pb.ClientRequest {
-	trkMu.Lock()
-	defer trkMu.Unlock()
+func txOrderHash(k txKey) uint64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(k))
+	return h.Sum64()
+}
 
-	ready := make([]*pb.ClientRequest, 0, len(reqs))
+func lessTxKey(a, b txKey) bool {
+	ha, hb := txOrderHash(a), txOrderHash(b)
+	if ha == hb {
+		return a < b
+	}
+	return ha < hb
+}
+
+// UpdateAndCollectReady tracks how many times each tx has been observed
+// and returns the set of requests that have reached the required replication count.
+func UpdateAndCollectReady(reqs []*pb.ClientRequest) []*pb.ClientRequest {
+	mu.Lock()
+	defer mu.Unlock()
+
+	ready := make([]*pb.ClientRequest, 0)
 
 	for _, req := range reqs {
 		if req == nil || len(req.Deltas) == 0 {
@@ -125,101 +114,208 @@ func UpdateAndCollectReady(reqs []*pb.ClientRequest) []*pb.ClientRequest {
 			tracker[key] = ts
 		}
 		ts.seen++
+
+		// When the expected replication is reached, mark as ready
 		if ts.seen >= ts.need {
 			ready = append(ready, ts.req)
-			delete(tracker, key) // 防止二次执行
+			delete(tracker, key)
 		}
 	}
 	return ready
 }
 
-///////////////////////////
-// 轻量对象锁（CAS 快路径）
-///////////////////////////
-
-// 每个对象(userId)一把 CAS 锁：owner=0 表示空闲；否则为 token
 type objLock struct {
-	owner uint64 // 原子字段
+	owner txKey
+	waitQ *txMinHeap
+}
+type txMinHeap []txKey
+
+func (h txMinHeap) Len() int           { return len(h) }
+func (h txMinHeap) Less(i, j int) bool { return lessTxKey(h[i], h[j]) }
+func (h txMinHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *txMinHeap) Push(x any)        { *h = append(*h, x.(txKey)) }
+func (h *txMinHeap) Pop() any          { old := *h; x := old[len(old)-1]; *h = old[:len(old)-1]; return x }
+
+type engine struct {
+	mu      sync.Mutex
+	locks   map[int32]*objLock           // object -> lock
+	owners  map[txKey]map[int32]struct{} // tx -> objects currently held
+	waiting map[txKey]map[int32]struct{} // tx -> objects currently waited for
+
+	waitCh map[txKey]chan struct{} // tx -> per-tx wake-up channel (directed notify)
 }
 
-var lockTable sync.Map // key=int32(uid) -> *objLock
+var eng = &engine{
+	locks:   make(map[int32]*objLock),
+	owners:  make(map[txKey]map[int32]struct{}),
+	waiting: make(map[txKey]map[int32]struct{}),
+	waitCh:  make(map[txKey]chan struct{}),
+}
 
-func getLock(uid int32) *objLock {
-	if v, ok := lockTable.Load(uid); ok {
-		return v.(*objLock)
+// ensureWaitChLocked ensures the wait channel exists for tk.
+// Must be called while holding e.mu.
+func (e *engine) ensureWaitChLocked(tk txKey) chan struct{} {
+	ch := e.waitCh[tk]
+	if ch == nil {
+		ch = make(chan struct{}, 1) // Buffer 1
+		e.waitCh[tk] = ch
 	}
-	l := &objLock{}
-	if actual, _ := lockTable.LoadOrStore(uid, l); actual != nil {
-		return actual.(*objLock)
-	}
-	return l
+	return ch
 }
 
-// 稳定 token：基于 txKey 的 FNV-1a 64 位哈希；0 保留
-func txOrderHash(k txKey) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(k))
-	return h.Sum64()
-}
-func tokenOf(tk txKey) uint64 {
-	t := txOrderHash(tk)
-	if t == 0 {
-		t = 1
-	}
-	return t
+func (e *engine) ensureWaitCh(tk txKey) chan struct{} {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.ensureWaitChLocked(tk)
 }
 
-func casAcquire(l *objLock, me uint64) bool {
-	return atomic.CompareAndSwapUint64(&l.owner, 0, me)
-}
-func loadOwner(l *objLock) uint64 {
-	return atomic.LoadUint64(&l.owner)
-}
-func releaseOwner(l *objLock, me uint64) {
-	if atomic.LoadUint64(&l.owner) == me {
-		atomic.StoreUint64(&l.owner, 0)
+func (e *engine) notifyUnsafe(tk txKey) {
+	if ch, ok := e.waitCh[tk]; ok {
+		select {
+		case ch <- struct{}{}: // successfully enqueued a wake-up signal
+		default: // a signal is already pending; skip
+		}
 	}
 }
 
-// 按升序 keys 依次尝试拿锁；失败则释放已拿并返回
-func tryClaimAll(tk txKey, keys []int32) (ok bool, acquired []int32) {
-	me := tokenOf(tk)
-	acquired = make([]int32, 0, len(keys))
-	for _, id := range keys {
-		l := getLock(id)
-		if casAcquire(l, me) {
-			acquired = append(acquired, id)
+func removeFromWaitQ(h *txMinHeap, tk txKey) bool {
+	for i, v := range *h {
+		if v == tk {
+			heap.Remove(h, i)
+			return true
+		}
+	}
+	return false
+}
+
+// releaseSubsetLocked rolls back a subset of objects acquired during the
+// current tryLockAll call. Must be invoked while holding e.mu.
+func (e *engine) releaseSubsetLocked(tk txKey, objs []int32) {
+	for _, obj := range objs {
+		ol := e.locks[obj]
+		if ol == nil || ol.owner != tk {
 			continue
 		}
-		owner := loadOwner(l)
-		if owner == me {
-			continue // 已经持有
+		if ol.waitQ.Len() > 0 {
+			next := heap.Pop(ol.waitQ).(txKey)
+			ol.owner = next
+			if _, ok := e.owners[next]; !ok {
+				e.owners[next] = make(map[int32]struct{})
+			}
+			e.owners[next][obj] = struct{}{}
+			if w, ok := e.waiting[next]; ok {
+				delete(w, obj)
+				if len(w) == 0 {
+					delete(e.waiting, next)
+				}
+			}
+			e.notifyUnsafe(next)
+		} else {
+			ol.owner = ""
 		}
-		// 冲突：放弃本轮，交给外层退避后重试
-		releaseAll(me, acquired)
-		return false, nil
-	}
-	return true, acquired
-}
-
-func releaseAll(me uint64, ids []int32) {
-	// 逆序释放可略减假共享（不是强要求）
-	for i := len(ids) - 1; i >= 0; i-- {
-		l := getLock(ids[i])
-		releaseOwner(l, me)
+		// Remove from tk's ownership set
+		delete(e.owners[tk], obj)
 	}
 }
 
-///////////////////////////
-// 执行逻辑
-///////////////////////////
+// tryLockAll implements the Wait-Die policy. It returns (allAcquired, abortedSelf).
+func (e *engine) tryLockAll(tk txKey, keys []int32) (bool, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if _, ok := e.owners[tk]; !ok {
+		e.owners[tk] = make(map[int32]struct{}, len(keys))
+	}
+	if _, ok := e.waiting[tk]; !ok {
+		e.waiting[tk] = make(map[int32]struct{})
+	}
+
+	acquiredThisCall := make([]int32, 0, len(keys))
+	all := true
+
+	for _, obj := range keys {
+		// Already held; skip
+		if _, ok := e.owners[tk][obj]; ok {
+			continue
+		}
+		ol := e.locks[obj]
+		if ol == nil {
+			ol = &objLock{waitQ: &txMinHeap{}}
+			heap.Init(ol.waitQ)
+			e.locks[obj] = ol
+		}
+
+		if ol.owner == "" {
+			// Free: take it
+			ol.owner = tk
+			e.owners[tk][obj] = struct{}{}
+			acquiredThisCall = append(acquiredThisCall, obj)
+			delete(e.waiting[tk], obj)
+			continue
+		}
+
+		if ol.owner == tk {
+			continue
+		}
+
+		// Conflict: decide to wait or abort by "age" (Wait-Die)
+		owner := ol.owner
+		if lessTxKey(tk, owner) {
+			// tk is older, wait
+			if _, already := e.waiting[tk][obj]; !already {
+				heap.Push(ol.waitQ, tk)
+				e.waiting[tk][obj] = struct{}{}
+				e.ensureWaitChLocked(tk)
+			}
+			all = false
+			continue
+		}
+
+		// tk is younger, abort immediately and roll back locks acquired in this call
+		e.releaseSubsetLocked(tk, acquiredThisCall)
+		// Clean up any registered waits
+		if waits := e.waiting[tk]; waits != nil {
+			for o := range waits {
+				if l := e.locks[o]; l != nil && l.waitQ != nil {
+					removeFromWaitQ(l.waitQ, tk)
+				}
+			}
+			delete(e.waiting, tk)
+		}
+		return false, true // aborted
+	}
+
+	return all, false
+}
+
+// releaseAll releases all objects held by tk; it must pass the lock to the next
+// waiter (if any) and deliver a wake-up, mirroring releaseSubsetLocked.
+func (e *engine) releaseAll(tk txKey) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Collect objects to be released in this call
+	objs := make([]int32, 0, len(e.owners[tk]))
+	for obj := range e.owners[tk] {
+		objs = append(objs, obj)
+	}
+	e.releaseSubsetLocked(tk, objs)
+
+	// Clean ownership
+	delete(e.owners, tk)
+
+	if w, ok := e.waiting[tk]; ok && len(w) == 0 {
+		delete(e.waiting, tk)
+	}
+
+	delete(e.waitCh, tk)
+}
 
 func applyRequest(req *pb.ClientRequest) error {
 	if req == nil || len(req.Deltas) == 0 {
 		return nil
 	}
 
-	// 1) 聚合 & 守恒校验（仍是 float64，保持兼容）
 	agg := make(map[int32]float64, len(req.Deltas))
 	var sum float64
 	for _, d := range req.Deltas {
@@ -233,59 +329,69 @@ func applyRequest(req *pb.ClientRequest) error {
 		return ErrNonConserved
 	}
 
-	// 2) 对象键升序，确保获得锁顺序一致（避免 ABA）
+	tk := txDetKey(req)
 	keys := make([]int32, 0, len(agg))
 	for uid := range agg {
 		keys = append(keys, uid)
 	}
 	sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
 
-	// 3) 确定性微退避（避免抖动，无需队列/通道）
-	tk := txDetKey(req)
-	me := tokenOf(tk)
-	backoff := time.Duration(txOrderHash(tk)%200+50) * time.Microsecond
-
+	// 2PL: acquire all locks; if not all acquired, either get aborted by Wait-Die
+	// or wait on the directed wake-up channel with a small timeout backoff.
 	for {
-		ok, got := tryClaimAll(tk, keys)
-		if ok {
-			// 可选：余额充足校验（如需），否则直接写回
-			// for uid, delta := range agg {
-			// 	if delta < 0 && getBalance(uid)+delta < -1e-12 {
-			// 		releaseAll(me, got)
-			// 		return fmt.Errorf("%w: uid=%d", ErrInsufficientFunds, uid)
-			// 	}
-			// }
-			for uid, delta := range agg {
-				addBalance(uid, delta)
-			}
-			releaseAll(me, got)
-			return nil
+		all, aborted := eng.tryLockAll(tk, keys)
+		if aborted {
+			return errors.New("aborted by wait-die")
 		}
-		// 退避后重试（确定性）
-		time.Sleep(backoff)
+		if all {
+			break
+		}
+		// Wait for a directed wake-up (or fallback timeout)
+		ch := eng.ensureWaitCh(tk)
+		select {
+		case <-ch:
+		case <-time.After(2 * time.Millisecond):
+		}
 	}
+
+	// // Execute: (optional) pre-check balances, then apply and write back
+	// for uid, delta := range agg {
+	// 	if delta < 0 {
+	// 		cur := getBalance(uid)
+	// 		if cur+delta < -1e-12 {
+	// 			eng.releaseAll(tk)
+	// 			return fmt.Errorf("%w: uid=%d need=%f have=%f", ErrInsufficientFunds, uid, -delta, cur)
+	// 		}
+	// 	}
+	// }
+	for uid, delta := range agg {
+		cur := getBalance(uid)
+		setBalance(uid, cur+delta)
+	}
+	eng.releaseAll(tk)
+	return nil
 }
 
-// 批量提交：先去重，后顺序执行（并行度由上层 worker 池控制）
+// Batched submission
 func CommitEntry(requests []*pb.ClientRequest) {
 	logger.Debug().
 		Int("requestsLen", len(requests)).
-		Msg("account CommitEntry (CAS-light)")
+		Msg("account CommitEntryWithInstance")
 
 	ready := UpdateAndCollectReady(requests)
 	if len(ready) == 0 {
 		return
 	}
 
+	// execute sequentially; overall parallelism is controlled by
+	// the upper-layer worker pool in the log package.
 	for _, r := range ready {
 		if err := applyRequest(r); err != nil {
 			logger.Error().Err(err).Msg("applyRequest failed")
 		}
 	}
 
-	// 示例：读取一个账户看结果
 	logger.Info().
-		Float64("TotalAmount(uid=101)", getBalance(101)).
 		Int("executedReady", len(ready)).
-		Msg("CommitEntry done")
+		Msg("CommitEntryWithInstance done")
 }

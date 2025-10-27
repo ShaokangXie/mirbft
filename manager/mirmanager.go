@@ -65,21 +65,21 @@ type MirManager struct {
 	epochEntryBuffer *util.ChannelBuffer
 
 	mu                  sync.Mutex
-	lastEpochSN         int32           // 当前轮的末 SN（offset + epochLength - 1）
-	lastSNLeader        map[int32]int32 // 每个 segment 的“末 SN -> leaderID”
-	leaderDone          map[int32]bool  // 哪些 leader 已经“到过尾巴”
-	curLeaders          []int32         // 当前轮 leaders
-	checkpointRequested bool            // 这一轮是否已经请求过 checkpoint
+	lastEpochSN         int32           // Last sequence number of the current epoch
+	lastSNLeader        map[int32]int32 // Mapping from last SN of each segment to its leader ID
+	leaderDone          map[int32]bool  // Whether each leader has completed its segment
+	curLeaders          []int32         // Current leaders in the epoch
+	checkpointRequested bool            // Whether checkpoint for current epoch has been requested
 
 }
 
 // Create a new MirManager with with fresh state
 // The set of leaders is initialized to contain all the nodes
 func NewMirManager() *MirManager {
-	maxEpochLength := config.Config.EpochLength
-	if config.Config.SegmentLength != 0 {
-		maxEpochLength = membership.NumNodes() * config.Config.SegmentLength
-	}
+	// maxEpochLength := config.Config.EpochLength
+	// if config.Config.SegmentLength != 0 {
+	// 	maxEpochLength = membership.NumNodes() * config.Config.SegmentLength
+	// }
 	return &MirManager{
 		epoch:               0,
 		leaderPolicy:        NewLeaderPolicy(config.Config.LeaderPolicy),
@@ -88,7 +88,7 @@ func NewMirManager() *MirManager {
 		nextSegmentID:       0,
 		entriesChannel:      log.EntriesOutOfOrder(),
 		checkpointChannel:   log.Checkpoints(),
-		epochEntryBuffer:    util.NewChannelBuffer(maxEpochLength),
+		epochEntryBuffer:    util.NewChannelBuffer(1000000),
 		currentSuspects:     make(map[int32]bool),
 		lastSNLeader:        make(map[int32]int32),
 		leaderDone:          make(map[int32]bool),
@@ -174,7 +174,7 @@ func (mm *MirManager) handleLogEntries(wg *sync.WaitGroup) {
 		if isTail && !mm.leaderDone[leaderID] {
 			mm.leaderDone[leaderID] = true
 
-			// 统计已完成的 leader 数
+			// Check if enough leaders are done to advance the epoch
 			done := 0
 			for _, l := range mm.curLeaders {
 				if mm.leaderDone[l] {
@@ -185,13 +185,13 @@ func (mm *MirManager) handleLogEntries(wg *sync.WaitGroup) {
 			f := membership.Faults()
 			quorum := 2*f + 1
 			if quorum > len(mm.curLeaders) {
-				quorum = len(mm.curLeaders) // 小集群容错
+				quorum = len(mm.curLeaders)
 			}
 
 			if done >= quorum {
 				targetSN := mm.lastEpochSN
-				mm.checkpointRequested = true // 只触发一次
-				mm.mu.Unlock()                // **重要**：阻塞操作前必须解锁
+				mm.checkpointRequested = true // Trigger checkpoint request only once per epoch
+				mm.mu.Unlock()
 
 				// Trigger the checkpoint protocol. For now we only trigger the checkpoint protocol at the end of the epoch.
 				mm.checkpointSNChannel <- targetSN
@@ -260,17 +260,12 @@ func (mm *MirManager) handleCheckpoints(wg *sync.WaitGroup) {
 	for chkp := <-mm.checkpointChannel; chkp != nil; chkp = <-mm.checkpointChannel {
 		logger.Info().Int32("sn", chkp.Sn).Msg("Received stable checkpoint notification.")
 
-		// 先做 state transfer / catchup（让慢副本先同步到 checkpoint）
 		go statetransfer.CatchUp(chkp)
 
-		// —— 统一推进水位 & 发新 segments ——
-		// 这一步在每个副本本地、在“稳定 checkpoint 已确认”之后进行
-
-		// 先把上一轮 entries flush 出来并推进客户端水位
 		epochEntries := mm.epochEntryBuffer.Get()
 		request.AdvanceWatermarks(epochEntries)
 
-		// 进入下一轮
+		// Enter new epoch
 		mm.mu.Lock()
 		mm.epoch++
 		mm.currentSuspects = make(map[int32]bool)
@@ -311,7 +306,7 @@ func (mm *MirManager) issueSegments(oldEpochEntries []interface{}, leaders []int
 		logger.Info().Int("segID", segment.SegID()).Interface("sns", segment.SNs()).Msg("Announcing segment.")
 		mm.segmentChannel <- segment
 	}
-	// --- NEW: 记录当前轮的 leaders、每个 segment 的“末 SN”、以及本轮的 lastEpochSN
+	// --- NEW: Reset epoch state ---
 	mm.mu.Lock()
 	mm.curLeaders = leaders
 	mm.lastSNLeader = make(map[int32]int32, len(leaders))

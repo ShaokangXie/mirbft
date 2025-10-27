@@ -116,27 +116,28 @@ type client struct {
 }
 
 func (c *client) genDeltasSimple(seqNr int32) []*pb.BalanceDelta {
-	// —— 可按需调整这几个常量来改变冲突强度 —— //
+	// Adjust these constants to modify the characteristics of the generated requests.
 	const (
-		accounts   = 2000000000 // 账户范围 [1..accounts]
-		k          = 2          // 每笔参与账户数 (>=2)
-		amount     = 100.0      // 出款总额（入款之和相等）
-		hotFrac    = 0.0000     // 热点账户占比
-		hotUseProb = 0.00000    // 一笔至少涉及一个热点账户的概率
-		equalSplit = true       // 是否平均分配入款（否则随机比例）
+		accounts   = 20000 // account range: [1..accounts]
+		k          = 2     // involves k accounts per request
+		amount     = 100.0 // transfer amount per request
+		hotFrac    = 0.001 // hotspot account fraction
+		hotUseProb = 1     // probability of using a hotspot account in a request
+		equalSplit = true  // whether non-hotspot accounts share amount equally
 	)
+	// Key conflict probability: ~5%
 
-	// 用 seqNr 做种子，保证每个 clSn 生成固定的一笔（简单可复现）
+	// Initialize per-request random generator
 	r := rand.New(rand.NewSource(int64(uint32(c.ownClientID))<<32 | int64(uint32(seqNr))))
 
-	// 准备热点集合
+	// Generate hotspot accounts
 	hotN := int(float64(accounts) * hotFrac)
 	hot := make([]int32, 0, hotN)
 	for i := 0; i < hotN; i++ {
 		hot = append(hot, int32(i+1)) // [1..hotN]
 	}
 
-	// 选 k 个互异账户，按概率强制包含一个热点
+	// Select k distinct accounts
 	seen := make(map[int32]struct{}, k)
 	users := make([]int32, 0, k)
 	useHot := hotN > 0 && r.Float64() < hotUseProb
@@ -154,7 +155,7 @@ func (c *client) genDeltasSimple(seqNr int32) []*pb.BalanceDelta {
 		users = append(users, x)
 	}
 
-	// users[0] 出款，其余入款；总和守恒
+	// users[0] is the sender, the rest are receivers
 	d := make([]*pb.BalanceDelta, 0, k)
 	d = append(d, &pb.BalanceDelta{UserId: users[0], AmountDelta: -amount})
 
@@ -164,7 +165,7 @@ func (c *client) genDeltasSimple(seqNr int32) []*pb.BalanceDelta {
 			d = append(d, &pb.BalanceDelta{UserId: users[j], AmountDelta: share})
 		}
 	} else {
-		// 随机比例但和为 amount
+		// Random split
 		weights := make([]float64, k-1)
 		var sum float64
 		for j := range weights {
@@ -410,6 +411,7 @@ func (c *client) Run(wg *sync.WaitGroup) {
 				c.log.Error().Err(err).Int32("ordererID", peerID).Msg("Failed to close client request connection.")
 			}
 		}
+
 		responseHandlerWG.Wait()
 	}
 
@@ -711,6 +713,7 @@ func (c *client) resubmitPendingRequests() {
 	// If no requests were resubmitted, it means all requests are finished, so we can stop the client.
 	if resubmitted == 0 && c.epoch > 0 {
 		// c.log.Info().Msg("All requests finished after bucket reassignment, stopping client.")
+		time.Sleep(2 * time.Second) // Wait a bit to let logs flush
 		atomic.StoreInt32(&c.stopNow, 1)
 	}
 }

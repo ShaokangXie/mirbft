@@ -15,9 +15,9 @@
 package log
 
 import (
+	"math"
 	"math/bits"
 	"runtime"
-	"runtime/debug"
 	"sync"
 	"time"
 
@@ -31,12 +31,12 @@ const (
 	// Capacity of channels used for subscribing to the log Entries.
 	// The goroutine committing a new Entry to the log will block if the channel is full.
 	// This should be avoided.
-	entryChannelCapacity = 10000000
+	entryChannelCapacity = 100000
 
 	// Same as above, for checkpoints
-	checkpointChannelCapacity = 10000
+	checkpointChannelCapacity = 1000
 
-	finalizedChannelCapacity = 10000000
+	finalizedChannelCapacity = 100000000
 )
 
 var (
@@ -79,35 +79,36 @@ var (
 
 	// ---- per-tx replica tracking ----
 	txMu        sync.Mutex
-	txPending   = make(map[txKey]*repSet)  // 未收齐的逻辑事务
-	txFinalized = make(map[txKey]struct{}) // 已完成的逻辑事务（防重复发布）
+	txPending   = make(map[txKey]*repSet)  // Map of pending logical transactions
+	txFinalized = make(map[txKey]struct{}) // Set of finalized logical transactions
 
 	// ---- finalized dispatch ----
 	finalizedSubs     = make([]chan *Entry, 0)
 	finalizedSubsLock sync.Mutex
 	finalizedQueue    chan *Entry
 
-	// ---- 并发提交管线（合并 + worker 池）----
+	// ---- commit pipeline ----
 	commitInitOnce   sync.Once
-	commitInCh       chan []*pb.ClientRequest        // 每个 entry 的批次
-	commitExecCh     chan []*pb.ClientRequest        // 合并后的批次，交给执行 worker
-	commitWorkerN    = max(2, runtime.NumCPU())      // 提交执行 worker 数
-	commitMaxBatch   = 16_384                        // 合并后的最大请求数
-	commitCoalesceNS = int64(200 * time.Microsecond) // 合并窗口
+	commitInCh       chan []*pb.ClientRequest        // The raw committed batches from the log
+	commitExecCh     chan []*pb.ClientRequest        // Batches ready for execution
+	commitWorkerN    = max(2, runtime.NumCPU())      // Number of commit workers
+	commitMaxBatch   = 16_384                        // Maximum number of requests per commit batch
+	commitCoalesceNS = int64(200 * time.Microsecond) // Maximum time to wait for coalescing more requests
+
+	entriesFreeMu sync.Mutex
 )
 
-// 逻辑事务键：(client_id, client_sn)
 type txKey struct {
 	ClientID int32
 	ClientSn int32
 }
 
-// 每个逻辑事务的副本收集状态（无限制 rep 个数）
+// repSet tracks the set of replicas that have committed a particular logical transaction.
 type repSet struct {
-	total  int32             // 期望副本总数：RequestID.replication
-	mask   uint64            // 已到达的副本集合 bitset（replication_id < 64）
-	sample *pb.ClientRequest // 代表副本（用于向上层交付）
-	minSN  int32             // 该事务出现过的最小 entry.sn（用于构造交付用 Entry 的 Sn）
+	total  int32             // Expected number of replicas
+	mask   uint64            // Bitset of replicas that have committed
+	sample *pb.ClientRequest // A sample ClientRequest for this transaction
+	minSN  int32             // Minimum log sequence number in which this transaction was included
 }
 
 // CommitEntry a decided value to the log.
@@ -136,22 +137,21 @@ func CommitEntry(entry *Entry) {
 	entryPublishLock.Unlock()
 
 	go func() {
-		// 旧逻辑（按 sn 顺序全局发布）
 		publishEntries()
 
-		// 交给并发提交管线（跨 entry 合并 + worker 并行）
+		// Enqueue commit for all requests in the entry
 		if entry.Batch != nil && len(entry.Batch.Requests) > 0 {
 			enqueueCommit(entry.Batch.Requests)
 		}
 
-		// 批量 finalize（一次加锁，减少开销）
+		// Mark replicas and maybe finalize batch
 		if entry.Batch != nil && len(entry.Batch.Requests) > 0 {
 			markReplicasAndMaybeFinalizeBatch(entry.Batch.Requests, entry.Sn)
 		}
 	}()
 }
 
-// 批量标记副本到达；对收齐的 tx 生成 finalize Entry 入队
+// Mark replicas that have committed the given client requests.
 func markReplicasAndMaybeFinalizeBatch(crs []*pb.ClientRequest, sn int32) {
 	txMu.Lock()
 
@@ -213,24 +213,33 @@ func markReplicasAndMaybeFinalizeBatch(crs []*pb.ClientRequest, sn int32) {
 
 	txMu.Unlock()
 
-	// 出锁后统一入队，避免在持锁期间阻塞
+	// Deliver finalized transactions
+	minSN := int32(math.MaxInt32)
+	allReqs := make([]*pb.ClientRequest, 0, len(finished))
 	for _, it := range finished {
-		fin := &Entry{
-			Sn:    it.minSN,
-			Batch: &pb.Batch{Requests: []*pb.ClientRequest{it.sample}},
+		allReqs = append(allReqs, it.sample)
+		if it.minSN < minSN {
+			minSN = it.minSN
 		}
-		select {
-		case finalizedQueue <- fin:
-		default:
-			logger.Warn().Int32("sn", fin.Sn).Msg("finalizedQueue full; blocking")
-			finalizedQueue <- fin
-		}
-		logger.Debug().
-			Int32("client_id", it.sample.RequestId.ClientId).
-			Int32("client_sn", it.sample.RequestId.ClientSn).
-			Int32("replication", it.sample.RequestId.ClientReplication).
-			Msg("Finalized transaction after all replicas committed (batched).")
 	}
+	if minSN == math.MaxInt32 {
+		minSN = 0
+	}
+	fin := &Entry{
+		Sn: minSN, // sn does not matter for finalized entries
+		Batch: &pb.Batch{
+			Requests: append([]*pb.ClientRequest(nil), allReqs...),
+		},
+	}
+	select {
+	case finalizedQueue <- fin:
+	default:
+		logger.Warn().Int32("sn", fin.Sn).Msg("finalizedQueue full; blocking")
+		finalizedQueue <- fin
+	}
+	logger.Info().
+		Int32("Length", int32(len(allReqs))).
+		Msg("Finalized batch of client requests.")
 }
 
 // Retrieve Entry with sequence number sn.
@@ -433,29 +442,37 @@ func publishEntry(e *Entry, subscribers []chan *Entry) {
 }
 
 func FreeOldEntries(snStart int32, snEnd int32) {
-	entries.Range(func(key, value interface{}) bool {
-		entries.Delete(key)
+	entriesFreeMu.Lock()
+	defer entriesFreeMu.Unlock()
+
+	// 1) First collect all keys to be deleted
+	keys := make([]int32, 0, 4096)
+	entries.Range(func(k, _ any) bool {
+		if sn, ok := k.(int32); ok {
+			if sn >= snStart && sn <= snEnd {
+				keys = append(keys, sn)
+			}
+		}
 		return true
 	})
-	entries = sync.Map{}
-	for i := 0; i < 3; i++ {
-		runtime.GC()
+
+	// 2) Delete them one by one
+	for _, sn := range keys {
+		entries.Delete(sn)
 	}
-	debug.FreeOSMemory()
 }
 
 func init() {
-	finalizedQueue = make(chan *Entry, finalizedChannelCapacity*2) // 内部缓冲再大一点
+	finalizedQueue = make(chan *Entry, finalizedChannelCapacity)
 	go finalizedDispatcher()
 }
 
-// ---- 并发提交管线 ----
-
+// ---- commit pipeline ----
 func initCommitPipeline() {
 	commitInCh = make(chan []*pb.ClientRequest, 4096)
 	commitExecCh = make(chan []*pb.ClientRequest, 1024)
 
-	// 合并器：把短时间内多个 entry 的批次合并为更大的批次
+	// Coalescing worker: collects requests into bigger batches
 	go func() {
 		for first := range commitInCh {
 			buf := make([]*pb.ClientRequest, 0, len(first)*2)
@@ -482,7 +499,7 @@ func initCommitPipeline() {
 		}
 	}()
 
-	// 执行 worker 池：并行执行 account.CommitEntry
+	// Commit workers: execute committed requests
 	for i := 0; i < commitWorkerN; i++ {
 		go func() {
 			for batch := range commitExecCh {
@@ -494,10 +511,10 @@ func initCommitPipeline() {
 
 func enqueueCommit(reqs []*pb.ClientRequest) {
 	commitInitOnce.Do(initCommitPipeline)
-	commitInCh <- reqs // 背压即可，避免丢弃
+	commitInCh <- reqs //
 }
 
-// ---- finalized 分发 ----
+// ---- finalized dispatch ----
 
 func finalizedDispatcher() {
 	for e := range finalizedQueue {
@@ -506,7 +523,7 @@ func finalizedDispatcher() {
 			select {
 			case sub <- e:
 			default:
-				// 订阅者太慢：丢弃并告警（不回压提交与共识）
+				// Subscriber is slow, drop the entry
 				logger.Warn().Int32("sn", e.Sn).Msg("finalized subscriber is slow; dropping one entry")
 			}
 		}

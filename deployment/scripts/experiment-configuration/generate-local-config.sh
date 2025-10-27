@@ -40,12 +40,12 @@ faultyMachineLocations="sjc04 osa23 ams03 syd05 lon06 wdc07 che01 tok05 par01 da
 clients1="1"    # deploys 1 client machine which run the specified number of client instances
 clients16=""    # deploys 16 client machine which run the specified number of client instances
 clients32=""    # deploys 32 client machine which run the specified number of client instances
-systemSizes="4" # Must be sorted in ascending order!
-failureCounts=(0) # For each system size, the corresponding failure count (on top of the correct nodes)
+systemSizes="3" # Must be sorted in ascending order!
+failureCounts=(1) # For each system size, the corresponding failure count (on top of the correct nodes)
 fixBatchRate=false
 networkInterface="lo"
 
-StragglerCnt=(1) # Count of Straggler (Only effect when crashTimings is 'Straggler')
+StragglerCnt=(0) # Count of Straggler (Only effect when crashTimings is 'Straggler')
 privKeyNumEachPeer=(10) # Using as buffer for lagged instance
 UseSig=(false)
 
@@ -89,8 +89,8 @@ leaderPolicies="Simple"  # Possible values:
                          #     "Simple": all nodes in the leaderset
                          #     "Blacklist": faulty nodes are blacklisted, at least 2f+1 nodes in the leaderset
                          #     "Backoff": faulty nodes are temporarily blacklisted and their penalty exponentially increases if after reinclusion to the leaderset they are faulty again.
-leaderPolicyWithFaults="SimulatedRandomFailures"
-crashTimings="Straggler" # Possible values:
+leaderPolicyWithFaults="Simple"
+crashTimings="EpochEnd" # Possible values:
                           #     "EpochStart": The faulty nodes stop participating at the protocol at the beginning of the first epoch
                           #     "EpochEnd": The faulty nodes stop participating at the protocol before proposing their last batch
                           #     "Straggler": The faulty nodes, if in the leaderset, delay proposing their batches for 0.5*viewChangeTimeouts. Works only with Pbft orderer.
@@ -121,7 +121,7 @@ function skip() {
 
 throughputsAuthPbft=$()
 # throughputsAuthPbft[4]="105000 110000 115000 120000"
-throughputsAuthPbft[4]="3000"
+throughputsAuthPbft[4]="1024"
 throughputsAuthPbft[8]=""
 throughputsAuthPbft[16]=""
 throughputsAuthPbft[32]=""

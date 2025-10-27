@@ -234,11 +234,11 @@ func (po *PbftOrderer) killSegment(seg manager.Segment) {
 		return
 	}
 
-	// A. 标记“将要销毁”，让所有未触发/即将触发的回调先自我短路
+	// A. Mark as destroyed
 	atomic.StoreUint32(&pi.destroyed, 1)
 
-	// B. 先停所有定时器（必须）
-	pi.stopAllTimers() // 把 checkpointTimer + 每个 batch 的 viewChangeTimer 都 Stop 并置 nil
+	// B. Stop all timers
+	pi.stopAllTimers()
 
 	// Close the message channel for the segment
 	logger.Info().Int("segID", seg.SegID()).Msg("Closing message serializers.")
@@ -247,7 +247,7 @@ func (po *PbftOrderer) killSegment(seg manager.Segment) {
 	pi.serializer.stop()
 	pi.stopProposing()
 
-	// D. 正常做 po.last、backlog GC、median commit 统计等（你已有）
+	// D. Statistics
 	po.setMedianCommitTime(seg)
 	logger.Info().Int("segID", seg.SegID()).Int64("commit", int64(po.commitTime)).Msg("Median commit time")
 
@@ -256,12 +256,10 @@ func (po *PbftOrderer) killSegment(seg manager.Segment) {
 		po.dispatcher.delete(sn)
 	}
 
-	time.Sleep(5 * time.Second) // 等待所有消息处理完毕（足够长时间即可）
-	// E. 清理日志内存（放到 killSegment 里）
-	log.FreeOldEntries(seg.FirstSN(), seg.LastSN())
-
-	// F. 轻量释放引用（不要动 serializer；或最后动）
-	pi.freeMemory() // 这个函数里不做 GC、不关通道、不置 serializer=nil
+	// time.Sleep(5 * time.Second)
+	// E. Cleanup log entries
+	// log.FreeOldEntries(seg.FirstSN(), seg.LastSN())
+	// pi.freeMemory()
 }
 
 func (po *PbftOrderer) Sign(data []byte) ([]byte, error) {
@@ -282,7 +280,6 @@ func (po *PbftOrderer) setMedianCommitTime(seg manager.Segment) {
 		e := log.GetEntry(sn)
 		if e == nil {
 			missing++
-			// 建议：只记录一次，避免刷屏
 			if missing == 1 {
 				logger.Warn().Int("segID", seg.SegID()).
 					Msg("Some log entries missing while computing commit median; will skip them.")
@@ -290,7 +287,6 @@ func (po *PbftOrderer) setMedianCommitTime(seg manager.Segment) {
 			continue
 		}
 		duration := e.CommitTs - e.ProposeTs
-		// 过滤掉异常/未填充的数据
 		if duration <= 0 {
 			continue
 		}
